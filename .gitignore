@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build and test output
+.next/
+dist/
+build/
+coverage/
+test-results/
+playwright-report/
+target/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local-only agent pointers and control artifacts
+AGENTS.local.md
+.commonsops/
+COMMONSOPS_AI_HANDOFF.md
+COMMONSOPS_START_HERE.md
