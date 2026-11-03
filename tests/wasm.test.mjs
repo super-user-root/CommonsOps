@@ -7,7 +7,7 @@ const wasmPath = new URL(
   import.meta.url,
 );
 
-test("release WASM is valid and exposes only scaffold contract methods", async () => {
+test("release WASM is valid and exposes the exact registry template API", async () => {
   const bytes = await readFile(wasmPath);
   assert.ok(bytes.length > 8, "WASM artifact must not be empty");
   assert.ok(WebAssembly.validate(bytes));
@@ -19,8 +19,14 @@ test("release WASM is valid and exposes only scaffold contract methods", async (
   // near-sdk adds the standard NEP-330 source-metadata view automatically.
   assert.deepEqual(functions, [
     "contract_source_metadata",
+    "create_template",
     "foundation_status",
+    "get_cycle",
+    "get_template",
+    "materialize_cycle",
     "new",
+    "set_template_active",
+    "skip_expired_periods",
   ]);
   const imports = WebAssembly.Module.imports(module);
   assert.ok(imports.length > 0, "NEAR host imports must exist");
