@@ -1,0 +1,23 @@
+{
+  "name": "@commonsops/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "start": "next start --hostname 127.0.0.1",
+    "build": "next build",
+    "typecheck": "next typegen && tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@commonsops/domain": "workspace:*",
+    "@commonsops/near": "workspace:*",
+    "next": "16.4.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
+  }
+}

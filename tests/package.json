@@ -1,0 +1,13 @@
+{
+  "name": "@commonsops/tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@commonsops/domain": "workspace:*",
+    "@commonsops/near": "workspace:*"
+  }
+}

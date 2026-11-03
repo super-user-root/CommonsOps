@@ -1,0 +1,10 @@
+{
+  "extends": "../packages/tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["*.ts", "*.mjs"]
+}
