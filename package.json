@@ -19,6 +19,7 @@
     "build": "node tests/run.mjs build",
     "build:contract": "node tests/run.mjs build:contract",
     "test:production": "node tests/run.mjs test:production",
+    "smoke:testnet": "node scripts/smoke-testnet.mjs",
     "verify:offline": "node tests/run.mjs verify:offline"
   },
   "devDependencies": {

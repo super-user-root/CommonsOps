@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
 
+export const REVIEWED_SOURCE_HEAD = "27b631a15745859b92572349d60425dd2d1a6ed9";
+export const REVIEWED_WASM_SHA256 =
+  "9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c";
+export const REVIEWED_WASM_BYTES = 261_226;
+export const REVIEWED_RUST = "1.98.0";
+export const REVIEWED_NEAR_SDK = "5.30.0";
+export const REVIEWED_NEAR_CLI = "near-cli-rs 0.30.1";
+export const RPC_URL = "https://rpc.testnet.near.org";
 export const ACCOUNT_PATTERN =
   /^(?=.{2,64}$)(?:[a-z0-9]+[-_])*[a-z0-9]+(?:\.(?:[a-z0-9]+[-_])*[a-z0-9]+)*$/;
 
@@ -14,31 +22,59 @@ export function wasmDigest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+export function assertReviewedArtifact({ sourceHead, wasmBytes, wasmSha256 }) {
+  if (sourceHead !== REVIEWED_SOURCE_HEAD) {
+    throw new Error(`Source head is not reviewed: ${sourceHead}`);
+  }
+  if (
+    wasmSha256 !== REVIEWED_WASM_SHA256 ||
+    wasmBytes !== REVIEWED_WASM_BYTES
+  ) {
+    throw new Error("WASM does not match the reviewed artifact");
+  }
+}
+
 export function createDeploymentManifest({
   accountId,
   managerId,
+  signerPublicKey,
+  nonce,
+  blockHash,
+  preDeployment,
   sourceHead,
   wasmBytes,
   wasmSha256,
 }) {
   validateTestnetAccount(accountId, "contract account");
   validateTestnetAccount(managerId, "manager account");
-  if (!/^[a-f0-9]{40}$/.test(sourceHead)) {
-    throw new Error("sourceHead must be a full lower-case Git SHA");
+  if (!/^ed25519:[1-9A-HJ-NP-Za-km-z]{40,50}$/.test(signerPublicKey)) {
+    throw new Error("signerPublicKey must be an ed25519 public key");
   }
-  if (!/^[a-f0-9]{64}$/.test(wasmSha256)) {
-    throw new Error("wasmSha256 must be a SHA-256 hex digest");
+  if (!Number.isSafeInteger(nonce) || nonce <= 0) {
+    throw new Error("nonce must be a positive safe integer");
   }
-  if (!Number.isSafeInteger(wasmBytes) || wasmBytes <= 0) {
-    throw new Error("wasmBytes must be a positive safe integer");
+  if (!/^[1-9A-HJ-NP-Za-km-z]{40,50}$/.test(blockHash)) {
+    throw new Error("blockHash must be a base58 crypto hash");
   }
+  if (
+    !preDeployment ||
+    preDeployment.blockHash !== blockHash ||
+    !Number.isSafeInteger(preDeployment.blockHeight) ||
+    typeof preDeployment.codeHash !== "string"
+  ) {
+    throw new Error(
+      "preDeployment must pin account state to the access-key block",
+    );
+  }
+  assertReviewedArtifact({ sourceHead, wasmBytes, wasmSha256 });
+  const artifactPath = `deployments/testnet/artifacts/${wasmSha256}.wasm`;
   const initArgs = { manager_id: managerId, network: "TESTNET" };
   const unsignedCommandArgs = [
     "contract",
     "deploy",
     accountId,
     "use-file",
-    "contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
+    artifactPath,
     "with-init-call",
     "new",
     "json-args",
@@ -51,36 +87,41 @@ export function createDeploymentManifest({
     "testnet",
     "sign-later",
     "--signer-public-key",
-    "<PUBLIC_KEY>",
+    signerPublicKey,
     "--nonce",
-    "<NONCE>",
+    String(nonce),
     "--block-hash",
-    "<RECENT_BLOCK_HASH>",
+    blockHash,
     "save-to-file",
     "deployments/testnet/unsigned-deploy.transaction",
   ];
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: "PREPARED_UNSIGNED",
     network: "testnet",
+    rpcUrl: RPC_URL,
     contractAccountId: accountId,
     managerAccountId: managerId,
+    signerAccountId: accountId,
+    signerPublicKey,
     sourceHead,
-    wasmPath:
-      "contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
+    artifactPath,
     wasmSha256,
     wasmBytes,
-    rust: "1.98.0",
-    nearSdk: "5.30.0",
-    nearCli: "near-cli-rs 0.30.1",
+    rust: REVIEWED_RUST,
+    nearSdk: REVIEWED_NEAR_SDK,
+    nearCli: REVIEWED_NEAR_CLI,
     atomicActions: ["DeployContract", "FunctionCall:new"],
     initArgs,
-    prepaidGas: "50 Tgas",
-    attachedDeposit: "0 NEAR",
+    prepaidGas: "50000000000000",
+    attachedDeposit: "0",
+    nonce,
+    recentBlockHash: blockHash,
+    preDeployment,
     unsignedCommandArgs,
     transactionHash: null,
     receipts: [],
-    deployedCodeHash: null,
+    postDeployment: null,
   };
 }
 
@@ -88,6 +129,116 @@ export function shellQuote(value) {
   return `'${String(value).replaceAll("'", `'"'"'`)}'`;
 }
 
+export function powerShellQuote(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
 export function bashCommand(manifest) {
   return ["near", ...manifest.unsignedCommandArgs].map(shellQuote).join(" ");
+}
+
+export function powerShellCommand(manifest) {
+  return `& near ${manifest.unsignedCommandArgs.map(powerShellQuote).join(" ")}`;
+}
+
+export function nearCodeHash(bytes) {
+  return base58Encode(Buffer.from(wasmDigest(bytes), "hex"));
+}
+
+export function base58Encode(bytes) {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let value = 0n;
+  for (const byte of bytes) value = value * 256n + BigInt(byte);
+  let encoded = "";
+  while (value > 0n) {
+    const digit = Number(value % 58n);
+    encoded = alphabet[digit] + encoded;
+    value /= 58n;
+  }
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    encoded = "1" + encoded;
+  }
+  return encoded || "1";
+}
+
+export async function rpcCall(method, params, fetchImpl = fetch) {
+  const response = await fetchImpl(RPC_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "commonsops-deployment",
+      method,
+      params,
+    }),
+  });
+  if (!response.ok) throw new Error(`RPC HTTP ${response.status}`);
+  const payload = await response.json();
+  if (payload.error) throw new Error(JSON.stringify(payload.error));
+  return payload.result;
+}
+
+export function verifyDeploymentTransaction(manifest, transaction) {
+  if (manifest.status !== "PREPARED_UNSIGNED") {
+    throw new Error("Manifest must be PREPARED_UNSIGNED before verification");
+  }
+  if (!transaction || transaction.final_execution_status !== "FINAL") {
+    throw new Error("Deployment transaction is not final");
+  }
+  if (
+    transaction.transaction?.signer_id !== manifest.contractAccountId ||
+    transaction.transaction?.receiver_id !== manifest.contractAccountId
+  ) {
+    throw new Error(
+      "Deployment signer/receiver does not match contract account",
+    );
+  }
+  const actions = transaction.transaction.actions;
+  if (!Array.isArray(actions) || actions.length !== 2) {
+    throw new Error("Deployment must contain exactly two actions");
+  }
+  const codeBase64 = actions[0]?.DeployContract?.code;
+  const call = actions[1]?.FunctionCall;
+  if (!codeBase64 || !call || call.method_name !== "new") {
+    throw new Error("Deployment action order or init method is invalid");
+  }
+  const code = Buffer.from(codeBase64, "base64");
+  assertReviewedArtifact({
+    sourceHead: manifest.sourceHead,
+    wasmBytes: code.length,
+    wasmSha256: wasmDigest(code),
+  });
+  const args = JSON.parse(Buffer.from(call.args, "base64").toString("utf8"));
+  if (
+    JSON.stringify(args) !== JSON.stringify(manifest.initArgs) ||
+    String(call.gas) !== manifest.prepaidGas ||
+    String(call.deposit) !== manifest.attachedDeposit
+  ) {
+    throw new Error(
+      "Deployment init arguments, gas or deposit differ from manifest",
+    );
+  }
+  const outcomes = [
+    transaction.transaction_outcome,
+    ...(transaction.receipts_outcome ?? []),
+  ];
+  if (
+    outcomes.length < 2 ||
+    outcomes.some((entry) => entry?.outcome?.status?.Failure)
+  ) {
+    throw new Error("Deployment has missing or failed receipt outcomes");
+  }
+  const receiptIds = (transaction.receipts_outcome ?? []).map(
+    (entry) => entry.id,
+  );
+  if (receiptIds.some((id) => typeof id !== "string")) {
+    throw new Error("Deployment receipt IDs are incomplete");
+  }
+  return {
+    transactionHash: transaction.transaction.hash,
+    finalizedBlockHash: transaction.transaction_outcome.block_hash,
+    receiptIds,
+    reviewedCodeHash: nearCodeHash(code),
+  };
 }

@@ -1,22 +1,76 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import {
+  REVIEWED_SOURCE_HEAD,
+  REVIEWED_WASM_BYTES,
+  REVIEWED_WASM_SHA256,
+  base58Encode,
   bashCommand,
   createDeploymentManifest,
+  nearCodeHash,
+  powerShellCommand,
   validateTestnetAccount,
+  verifyDeploymentTransaction,
 } from "./deployment-lib.mjs";
 
+const publicKey = `ed25519:${"2".repeat(44)}`;
+const blockHash = "3".repeat(44);
 const input = {
   accountId: "registry.commonsops.testnet",
   managerId: "manager.testnet",
-  sourceHead: "a".repeat(40),
-  wasmBytes: 261_226,
-  wasmSha256: "b".repeat(64),
+  signerPublicKey: publicKey,
+  nonce: 42,
+  blockHash,
+  preDeployment: {
+    blockHash,
+    blockHeight: 100,
+    codeHash: "11111111111111111111111111111111",
+    storageUsage: 182,
+    amount: "1000000000000000000000000",
+    locked: "0",
+  },
+  sourceHead: REVIEWED_SOURCE_HEAD,
+  wasmBytes: REVIEWED_WASM_BYTES,
+  wasmSha256: REVIEWED_WASM_SHA256,
 };
 
-test("builds an unsigned atomic deploy and init manifest", () => {
+function fakeTransaction(manifest) {
+  const code = Buffer.alloc(REVIEWED_WASM_BYTES);
+  // Transaction-verification tests override reviewed constants by constructing matching fields below only where relevant.
+  return {
+    final_execution_status: "FINAL",
+    transaction: {
+      hash: "4".repeat(44),
+      signer_id: manifest.contractAccountId,
+      receiver_id: manifest.contractAccountId,
+      actions: [
+        { DeployContract: { code: code.toString("base64") } },
+        {
+          FunctionCall: {
+            method_name: "new",
+            args: Buffer.from(JSON.stringify(manifest.initArgs)).toString(
+              "base64",
+            ),
+            gas: manifest.prepaidGas,
+            deposit: manifest.attachedDeposit,
+          },
+        },
+      ],
+    },
+    transaction_outcome: {
+      block_hash: "5".repeat(44),
+      outcome: { status: { SuccessReceiptId: "6".repeat(44) } },
+    },
+    receipts_outcome: [
+      { id: "6".repeat(44), outcome: { status: { SuccessValue: "" } } },
+    ],
+  };
+}
+
+test("builds shell-specific unsigned atomic deploy and init manifest", () => {
   const manifest = createDeploymentManifest(input);
   assert.deepEqual(manifest.atomicActions, [
     "DeployContract",
@@ -26,29 +80,53 @@ test("builds an unsigned atomic deploy and init manifest", () => {
     manager_id: "manager.testnet",
     network: "TESTNET",
   });
-  assert.equal(manifest.attachedDeposit, "0 NEAR");
+  assert.equal(manifest.attachedDeposit, "0");
   assert.equal(manifest.transactionHash, null);
   assert(!JSON.stringify(manifest).includes("private"));
-  assert.deepEqual(manifest.unsignedCommandArgs.slice(-2), [
-    "save-to-file",
-    "deployments/testnet/unsigned-deploy.transaction",
-  ]);
-  const command = bashCommand(manifest);
-  assert.match(command, /'sign-later'/);
-  assert.match(command, /'DeployContract'|deploy/);
-  assert(!command.includes("sign-with-keychain"));
+  assert.equal(
+    manifest.artifactPath,
+    `deployments/testnet/artifacts/${REVIEWED_WASM_SHA256}.wasm`,
+  );
+  assert.match(bashCommand(manifest), /^'near' /);
+  assert.match(powerShellCommand(manifest), /^& near /);
+  assert(!bashCommand(manifest).includes("sign-with-keychain"));
 });
 
-test("rejects mainnet or malformed account and provenance inputs", () => {
-  assert.throws(
-    () => validateTestnetAccount("registry.near", "contract account"),
-    /named \.testnet account/,
+test("rejects mainnet, unreviewed source, artifact, and incomplete signer inputs", () => {
+  assert.throws(() =>
+    validateTestnetAccount("registry.near", "contract account"),
   );
   for (const patch of [
-    { sourceHead: "a".repeat(39) },
-    { wasmSha256: "z".repeat(64) },
+    { sourceHead: "a".repeat(40) },
+    { wasmSha256: "b".repeat(64) },
     { wasmBytes: 0 },
+    { signerPublicKey: "<PUBLIC_KEY>" },
+    { nonce: 0 },
+    { blockHash: "<BLOCK_HASH>" },
+    { preDeployment: { ...input.preDeployment, blockHash: "7".repeat(44) } },
   ]) {
     assert.throws(() => createDeploymentManifest({ ...input, ...patch }));
   }
+});
+
+test("transaction verifier rejects wrong action order and code", () => {
+  const manifest = createDeploymentManifest(input);
+  const transaction = fakeTransaction(manifest);
+  // Synthetic zero bytes cannot match the reviewed artifact.
+  assert.throws(
+    () => verifyDeploymentTransaction(manifest, transaction),
+    /WASM does not match/,
+  );
+  transaction.transaction.actions.reverse();
+  assert.throws(() => verifyDeploymentTransaction(manifest, transaction));
+});
+
+test("base58 NEAR code hash uses SHA-256 bytes", () => {
+  const bytes = Buffer.alloc(32);
+  const digestBytes = createHash("sha256").update(bytes).digest();
+  assert.equal(nearCodeHash(bytes), base58Encode(digestBytes));
+  assert.equal(
+    base58Encode(Buffer.alloc(32)),
+    "11111111111111111111111111111111",
+  );
 });

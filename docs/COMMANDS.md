@@ -33,24 +33,35 @@ See installed toolchains and cached dependencies. The first setup requires npm/c
 
 ## Prepare a testnet deployment without signing
 
-Build and verify the reviewed artifact first. Then use actual existing named testnet accounts supplied by the human:
+Build and verify the reviewed artifact first. Then use an actual existing named testnet account supplied by the human. The preparer checks the current checkout and artifact against the accepted source/hash/size, queries only public account/key/block state, and writes ignored unsigned provenance.
+
+Git Bash/POSIX:
 
 ```text
+export COMMONSOPS_SOURCE_HEAD=<reviewed-full-sha>
 pnpm build:contract
-set COMMONSOPS_SOURCE_HEAD=<reviewed-full-sha>
 node --test scripts/deployment-lib.test.mjs
 node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
 ```
 
-The preparer verifies the WASM hash and writes an ignored account-specific manifest. It prints a `near ... sign-later` command for one atomic `DeployContract` + `FunctionCall:new` transaction with 50 Tgas and 0 NEAR attached to initialization. It does not sign or broadcast. Do not commit the generated manifest or unsigned transaction.
+PowerShell:
+
+```text
+$env:COMMONSOPS_SOURCE_HEAD = '<reviewed-full-sha>'
+pnpm build:contract
+node --test scripts/deployment-lib.test.mjs
+node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
+```
+
+The preparer verifies the reviewed source SHA and WASM hash/size, writes an ignored content-addressed artifact, and outputs shell-specific `near ... sign-later` commands for one atomic `DeployContract` + `FunctionCall:new` transaction with 50 Tgas and 0 NEAR attached to initialization. It does not sign or broadcast. Do not commit the generated manifest, artifact copy, or unsigned transaction.
 
 After a human explicitly authorizes and signs/broadcasts that exact transaction, fill the public non-secret transaction/receipt/code-hash provenance and run:
 
 ```text
-node scripts/smoke-testnet.mjs <contract-account.testnet>
+pnpm smoke:testnet -- <contract-account.testnet>
 ```
 
-This is the frozen task's direct smoke command. The task specification names `pnpm smoke:testnet`, but root `package.json` is outside its immutable allowlist; no alias is added without an explicit scope exception. The smoke tool is read-only RPC verification, not deployment authorization.
+This satisfies the frozen `pnpm smoke:testnet` required check through the accepted narrow `package.json` scope exception. The smoke command is read-only RPC verification, not deployment authorization.
 
 ## View the shell
 

@@ -15,15 +15,29 @@ The constructor accepts only `signer == predecessor == current_account_id`, so t
 
 ## Prepare
 
+Use an existing funded named testnet account controlled by the human. The preparer queries its one full-access public key, next nonce, recent finalized block and pre-deployment account/code state read-only. It refuses multiple full-access keys so key selection cannot be implicit.
+
 From repo root after a reviewed release build:
 
+### Git Bash / POSIX
+
 ```text
-set COMMONSOPS_SOURCE_HEAD=<reviewed-full-sha>
+export COMMONSOPS_SOURCE_HEAD=<reviewed-full-sha>
 node --test scripts/deployment-lib.test.mjs
 node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
 ```
 
-This validates named testnet accounts, hashes the local WASM and writes `prepared-deployment.json`. It prints a `near ... sign-later` command requiring a fresh public key nonce and block hash. Running that command only creates an unsigned transaction file; it still requires the human's direct confirmation before any later signing/broadcast.
+### PowerShell
+
+```text
+$env:COMMONSOPS_SOURCE_HEAD = '<reviewed-full-sha>'
+node --test scripts/deployment-lib.test.mjs
+node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
+```
+
+The current preparer reads the checkout HEAD itself and fails unless it exactly equals the accepted source SHA; `COMMONSOPS_SOURCE_HEAD` is retained only as an operator cross-check in documentation and is not trusted by the script. It fails unless the local WASM exactly matches the reviewed hash and size, copies the bytes to a content-addressed ignored path, rehashes them, and builds both Bash and PowerShell `sign-later` commands against that immutable copy. Nonce is the selected full-access key's next nonce and the block hash is recent/pinned to the account pre-state.
+
+The generated manifest is ignored and incomplete until a separately human-confirmed transaction is signed/broadcast and its finalized transaction/receipts/post-deployment block+code fields are added. `pnpm smoke:testnet -- <account.testnet>` rejects incomplete provenance and then verifies the exact finalized actions/bytes/receipts and pinned onchain code read-only.
 
 ## Read-only smoke after deployment
 
