@@ -205,11 +205,14 @@ export function verifyDeploymentTransaction(manifest, transaction) {
     throw new Error("Deployment transaction is not final");
   }
   if (
+    transaction.transaction?.hash !== manifest.transactionHash ||
     transaction.transaction?.signer_id !== manifest.contractAccountId ||
-    transaction.transaction?.receiver_id !== manifest.contractAccountId
+    transaction.transaction?.receiver_id !== manifest.contractAccountId ||
+    transaction.transaction?.public_key !== manifest.signerPublicKey ||
+    Number(transaction.transaction?.nonce) !== manifest.nonce
   ) {
     throw new Error(
-      "Deployment signer/receiver does not match contract account",
+      "Deployment hash/key/nonce/signer/receiver does not match manifest",
     );
   }
   const actions = transaction.transaction.actions;
@@ -241,11 +244,16 @@ export function verifyDeploymentTransaction(manifest, transaction) {
     transaction.transaction_outcome,
     ...(transaction.receipts_outcome ?? []),
   ];
+  const isSuccessStatus = (status) =>
+    status &&
+    typeof status === "object" &&
+    (Object.hasOwn(status, "SuccessReceiptId") ||
+      Object.hasOwn(status, "SuccessValue"));
   if (
     outcomes.length < 2 ||
-    outcomes.some((entry) => entry?.outcome?.status?.Failure)
+    outcomes.some((entry) => !isSuccessStatus(entry?.outcome?.status))
   ) {
-    throw new Error("Deployment has missing or failed receipt outcomes");
+    throw new Error("Deployment has missing, unknown or failed outcomes");
   }
   const receiptIds = (transaction.receipts_outcome ?? []).map(
     (entry) => entry.id,

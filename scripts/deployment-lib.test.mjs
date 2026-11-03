@@ -46,9 +46,11 @@ function fakeTransaction(manifest, code = Buffer.alloc(REVIEWED_WASM_BYTES)) {
   return {
     final_execution_status: "FINAL",
     transaction: {
-      hash: "4".repeat(44),
+      hash: manifest.transactionHash,
       signer_id: manifest.contractAccountId,
       receiver_id: manifest.contractAccountId,
+      public_key: manifest.signerPublicKey,
+      nonce: manifest.nonce,
       actions: [
         { DeployContract: { code: code.toString("base64") } },
         {
@@ -140,6 +142,7 @@ test("transaction verifier accepts exact reviewed atomic receipt provenance", as
   );
   const code = await readFile(wasmPath);
   const manifest = createDeploymentManifest(input);
+  manifest.transactionHash = "4".repeat(44);
   manifest.status = "DEPLOYED";
   const verified = verifyDeploymentTransaction(
     manifest,
@@ -149,6 +152,29 @@ test("transaction verifier accepts exact reviewed atomic receipt provenance", as
   assert.equal(verified.transactionBlockHash, "5".repeat(44));
   assert.equal(verified.postStateBlockHash, "7".repeat(44));
   assert.deepEqual(verified.receiptIds, ["6".repeat(44)]);
+});
+
+test("transaction verifier rejects mismatched transaction identity and unknown outcomes", async () => {
+  const code = await readFile(
+    path.resolve(
+      import.meta.dirname,
+      "../contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
+    ),
+  );
+  for (const mutate of [
+    (tx) => (tx.transaction.hash = "8".repeat(44)),
+    (tx) => (tx.transaction.public_key = `ed25519:${"9".repeat(44)}`),
+    (tx) => (tx.transaction.nonce += 1),
+    (tx) => (tx.transaction_outcome.outcome.status = {}),
+    (tx) => (tx.receipts_outcome[0].outcome.status = {}),
+  ]) {
+    const manifest = createDeploymentManifest(input);
+    manifest.transactionHash = "4".repeat(44);
+    manifest.status = "DEPLOYED";
+    const transaction = fakeTransaction(manifest, code);
+    mutate(transaction);
+    assert.throws(() => verifyDeploymentTransaction(manifest, transaction));
+  }
 });
 
 test("base58 NEAR code hash uses SHA-256 bytes", () => {
