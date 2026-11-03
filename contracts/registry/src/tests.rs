@@ -356,6 +356,195 @@ fn claim_window_must_start_after_cycle_opening() {
     elapsed.validate();
 }
 
+fn operator_at(now_ns: u64, deposit: u128) {
+    testing_env!(
+        VMContextBuilder::new()
+            .current_account_id(account("registry.testnet"))
+            .signer_account_id(account("manager.testnet"))
+            .predecessor_account_id(account("manager.testnet"))
+            .attached_deposit(NearToken::from_yoctonear(deposit))
+            .account_balance(NearToken::from_near(10))
+            .block_timestamp(now_ns)
+            .build()
+    );
+}
+
+fn create_funded(registry: &mut Registry) -> Template {
+    operator_at(100, storage_reserve_cost(TEMPLATE_RESERVE_BYTES));
+    registry.create_template(input())
+}
+
+#[test]
+fn operator_creates_template_and_due_cycle() {
+    let mut registry = init();
+    let template = create_funded(&mut registry);
+    assert_eq!(template.id.0, 0);
+    assert_eq!(registry.next_template_id, 1);
+    assert_eq!(registry.get_template(U64(0)), Some(template));
+    operator_at(100, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    let cycle = registry.materialize_cycle(U64(0));
+    assert_eq!(cycle.key.period_index.0, 0);
+    assert_eq!(cycle.opens_at_ns.0, 100);
+    assert_eq!(cycle.deadline_at_ns.0, 600);
+    assert_eq!(cycle.status, CycleStatus::Open);
+    assert_eq!(registry.get_cycle(cycle.key.clone()), Some(cycle));
+    assert_eq!(
+        registry.get_template(U64(0)).unwrap().next_period_index.0,
+        1
+    );
+    assert_eq!(registry.cycle_count, 1);
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_MANAGER")]
+fn nonmanager_cannot_create_template() {
+    let mut registry = init();
+    context(
+        "contributor.testnet",
+        "contributor.testnet",
+        storage_reserve_cost(TEMPLATE_RESERVE_BYTES),
+    );
+    registry.create_template(input());
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_STORAGE_DEPOSIT")]
+fn unfunded_template_rejected() {
+    let mut registry = init();
+    operator_at(100, storage_reserve_cost(TEMPLATE_RESERVE_BYTES) - 1);
+    registry.create_template(input());
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_STORAGE_DEPOSIT")]
+fn unfunded_cycle_rejected() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(100, 0);
+    registry.materialize_cycle(U64(0));
+}
+
+#[test]
+#[should_panic(expected = "ERR_PERIOD_NOT_DUE")]
+fn cycle_before_due_rejected() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(99, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    registry.materialize_cycle(U64(0));
+}
+
+#[test]
+#[should_panic(expected = "ERR_PERIOD_EXPIRED")]
+fn cycle_at_exact_deadline_rejected() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(600, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    registry.materialize_cycle(U64(0));
+}
+
+#[test]
+fn pause_resume_preserves_economics_and_existing_cycle() {
+    let mut registry = init();
+    let original = create_funded(&mut registry);
+    operator_at(100, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    let cycle = registry.materialize_cycle(U64(0));
+    operator_at(100, 0);
+    let paused = registry.set_template_active(U64(0), false);
+    assert!(!paused.active);
+    assert_eq!(paused.input, original.input);
+    assert_eq!(registry.get_cycle(cycle.key.clone()), Some(cycle));
+    let resumed = registry.set_template_active(U64(0), true);
+    assert!(resumed.active);
+    assert_eq!(resumed.next_period_index.0, 1);
+}
+
+#[test]
+#[should_panic(expected = "ERR_TEMPLATE_PAUSED")]
+fn paused_template_cannot_materialize() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(100, 0);
+    registry.set_template_active(U64(0), false);
+    operator_at(100, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    registry.materialize_cycle(U64(0));
+}
+
+#[test]
+#[should_panic(expected = "ERR_DUPLICATE_CYCLE")]
+fn existing_period_cannot_be_materialized_twice() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(100, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    registry.materialize_cycle(U64(0));
+    // Simulate a persisted duplicate index instead of testing only normal index advancement.
+    registry.templates.get_mut(&0).unwrap().next_period_index = U64(0);
+    registry.materialize_cycle(U64(0));
+}
+
+#[test]
+fn only_expired_periods_are_skipped_and_skip_is_bounded() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(1600, 0);
+    assert_eq!(registry.skip_expired_periods(U64(0), U64(2)).0, 2);
+    assert_eq!(registry.cycle_count, 0);
+    assert_eq!(
+        registry.get_template(U64(0)).unwrap().next_period_index.0,
+        2
+    );
+}
+
+#[test]
+#[should_panic(expected = "ERR_SKIP_LIVE_PERIOD")]
+fn live_period_skip_rejected() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(599, 0);
+    registry.skip_expired_periods(U64(0), U64(1));
+}
+
+#[test]
+#[should_panic(expected = "ERR_INVALID_SKIP_COUNT")]
+fn unbounded_skip_rejected() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(u64::MAX, 0);
+    registry.skip_expired_periods(U64(0), U64(MAX_SKIP_COUNT + 1));
+}
+
+#[test]
+#[should_panic(expected = "ERR_TEMPLATE_CAPACITY")]
+fn template_cap_rejected() {
+    let mut registry = init();
+    registry.next_template_id = MAX_TEMPLATES;
+    operator_at(100, storage_reserve_cost(TEMPLATE_RESERVE_BYTES));
+    registry.create_template(input());
+}
+
+#[test]
+#[should_panic(expected = "ERR_CYCLE_CAPACITY")]
+fn cycle_cap_rejected() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    registry.cycle_count = MAX_CYCLES;
+    operator_at(100, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    registry.materialize_cycle(U64(0));
+}
+
+#[test]
+fn missing_views_are_none() {
+    let registry = init();
+    assert!(registry.get_template(U64(99)).is_none());
+    assert!(
+        registry
+            .get_cycle(CycleKey {
+                template_id: U64(99),
+                period_index: U64(0)
+            })
+            .is_none()
+    );
+}
+
 #[test]
 fn storage_prefixes_are_distinct() {
     let keys = [
