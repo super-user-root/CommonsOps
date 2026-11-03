@@ -1,0 +1,32 @@
+{
+  "name": "commonsops",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": "24.18.0",
+    "pnpm": "11.25.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @commonsops/web dev",
+    "start": "pnpm --filter @commonsops/web start",
+    "lint": "node tests/run.mjs lint",
+    "format": "prettier --write .",
+    "typecheck": "node tests/run.mjs typecheck",
+    "test": "node tests/run.mjs test",
+    "test:contract": "node tests/run.mjs test:contract",
+    "build": "node tests/run.mjs build",
+    "build:contract": "node tests/run.mjs build:contract",
+    "test:production": "node tests/run.mjs test:production",
+    "verify:offline": "node tests/run.mjs verify:offline"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2"
+  },
+  "prettier": {
+    "endOfLine": "auto"
+  }
+}
