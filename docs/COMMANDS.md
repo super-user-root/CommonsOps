@@ -31,6 +31,27 @@ See installed toolchains and cached dependencies. The first setup requires npm/c
 
 `verify:offline` disables Next telemetry and sets Cargo offline mode. It does not call NEAR RPC, GitHub, an indexer, a wallet, or another external service. The production smoke uses loopback HTTP, not a public network endpoint. Dependencies, platform-specific pnpm packages, Rust toolchain, and WASM target must already be available. Run setup again on a new host. This profile proves scaffold compilation and local shell behavior, **not** NEAR VM execution, deployment safety, treasury integration, or registry business correctness.
 
+## Prepare a testnet deployment without signing
+
+Build and verify the reviewed artifact first. Then use actual existing named testnet accounts supplied by the human:
+
+```text
+pnpm build:contract
+set COMMONSOPS_SOURCE_HEAD=<reviewed-full-sha>
+node --test scripts/deployment-lib.test.mjs
+node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
+```
+
+The preparer verifies the WASM hash and writes an ignored account-specific manifest. It prints a `near ... sign-later` command for one atomic `DeployContract` + `FunctionCall:new` transaction with 50 Tgas and 0 NEAR attached to initialization. It does not sign or broadcast. Do not commit the generated manifest or unsigned transaction.
+
+After a human explicitly authorizes and signs/broadcasts that exact transaction, fill the public non-secret transaction/receipt/code-hash provenance and run:
+
+```text
+node scripts/smoke-testnet.mjs <contract-account.testnet>
+```
+
+This is the frozen task's direct smoke command. The task specification names `pnpm smoke:testnet`, but root `package.json` is outside its immutable allowlist; no alias is added without an explicit scope exception. The smoke tool is read-only RPC verification, not deployment authorization.
+
 ## View the shell
 
 ```text
