@@ -290,6 +290,72 @@ fn insufficient_account_storage_backing_rejected() {
     registry.assert_storage_backed();
 }
 
+fn claimed_cycle() -> Cycle {
+    Cycle {
+        key: CycleKey {
+            template_id: U64(1),
+            period_index: U64(0),
+        },
+        status: CycleStatus::Claimed,
+        opens_at_ns: U64(100),
+        deadline_at_ns: U64(600),
+        dao_account_id: account("community.sputnikv2.testnet"),
+        amount_yocto: U128(1),
+        claim: Some(Claim {
+            claimant_id: account("contributor.testnet"),
+            payout_recipient_id: account("contributor.testnet"),
+            expires_at_ns: U64(600),
+        }),
+        evidence: None,
+        submitted_at_ns: None,
+        proposal_link: None,
+    }
+}
+
+#[test]
+fn submitted_cycle_rejects_every_forged_evidence_field() {
+    context("contributor.testnet", "contributor.testnet", 0);
+    let mut canonical = claimed_cycle();
+    canonical.status = CycleStatus::Submitted;
+    canonical.submitted_at_ns = Some(U64(200));
+    canonical.evidence = Some(Evidence::normalize("example", "docs", 42, &"a".repeat(40)));
+    canonical.validate();
+    let mut mutations = Vec::new();
+    for field in 0..7 {
+        let mut bad = canonical.clone();
+        let evidence = bad.evidence.as_mut().unwrap();
+        match field {
+            0 => evidence.repository_owner = "A".repeat(MAX_GITHUB_NAME_BYTES + 1),
+            1 => evidence.repository_name = "..".to_owned(),
+            2 => evidence.pull_request_number = U64(0),
+            3 => evidence.url = "https://attacker.invalid/forged".to_owned(),
+            4 => evidence.commit_sha = "g".repeat(40),
+            5 => evidence.digest_sha256 = "0".repeat(64),
+            _ => evidence.repository_owner = "EXAMPLE".to_owned(),
+        }
+        mutations.push(bad);
+    }
+    for bad in mutations {
+        assert!(std::panic::catch_unwind(|| bad.validate()).is_err());
+    }
+}
+
+#[test]
+fn claim_window_must_start_after_cycle_opening() {
+    context("contributor.testnet", "contributor.testnet", 0);
+    let valid = claimed_cycle();
+    valid.validate();
+    for expiry in [0, 100, 601] {
+        let mut invalid = valid.clone();
+        invalid.claim.as_mut().unwrap().expires_at_ns = U64(expiry);
+        assert!(std::panic::catch_unwind(|| invalid.validate()).is_err());
+    }
+    // An elapsed-but-not-yet-settled valid claim remains a valid stored record.
+    let mut elapsed = valid;
+    elapsed.claim.as_mut().unwrap().expires_at_ns = U64(101);
+    elapsed.validate();
+}
+
 #[test]
 fn storage_prefixes_are_distinct() {
     let keys = [

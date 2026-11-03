@@ -209,6 +209,16 @@ pub struct Evidence {
 }
 
 impl Evidence {
+    pub fn validate(&self) {
+        let canonical = Self::normalize(
+            &self.repository_owner,
+            &self.repository_name,
+            self.pull_request_number.0,
+            &self.commit_sha,
+        );
+        assert!(self == &canonical, "ERR_NONCANONICAL_EVIDENCE");
+    }
+
     pub fn normalize(
         owner: &str,
         repository: &str,
@@ -305,6 +315,10 @@ impl Cycle {
         if let Some(claim) = &self.claim {
             claim.validate();
             assert!(
+                claim.expires_at_ns.0 > self.opens_at_ns.0,
+                "ERR_INVALID_CLAIM_WINDOW"
+            );
+            assert!(
                 claim.expires_at_ns.0 <= self.deadline_at_ns.0,
                 "ERR_CLAIM_AFTER_DEADLINE"
             );
@@ -335,6 +349,7 @@ impl Cycle {
                         && self.submitted_at_ns.is_some(),
                     "ERR_INVALID_SUBMITTED_STATE"
                 );
+                self.evidence.as_ref().unwrap().validate();
                 let submitted_at_ns = self.submitted_at_ns.unwrap().0;
                 assert!(
                     submitted_at_ns >= self.opens_at_ns.0
