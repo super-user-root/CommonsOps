@@ -31,6 +31,38 @@ See installed toolchains and cached dependencies. The first setup requires npm/c
 
 `verify:offline` disables Next telemetry and sets Cargo offline mode. It does not call NEAR RPC, GitHub, an indexer, a wallet, or another external service. The production smoke uses loopback HTTP, not a public network endpoint. Dependencies, platform-specific pnpm packages, Rust toolchain, and WASM target must already be available. Run setup again on a new host. This profile proves scaffold compilation and local shell behavior, **not** NEAR VM execution, deployment safety, treasury integration, or registry business correctness.
 
+## Prepare a testnet deployment without signing
+
+Build and verify the reviewed artifact first. Then use an actual existing named testnet account supplied by the human. The preparer checks the current checkout and artifact against the accepted source/hash/size, queries only public account/key/block state, and writes ignored unsigned provenance.
+
+Git Bash/POSIX:
+
+```text
+export COMMONSOPS_SOURCE_HEAD=<reviewed-full-sha>
+pnpm build:contract
+node --test scripts/deployment-lib.test.mjs
+node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
+```
+
+PowerShell:
+
+```text
+$env:COMMONSOPS_SOURCE_HEAD = '<reviewed-full-sha>'
+pnpm build:contract
+node --test scripts/deployment-lib.test.mjs
+node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
+```
+
+The preparer verifies the reviewed source SHA and WASM hash/size, writes an ignored content-addressed artifact, and outputs shell-specific `near ... sign-later` commands for one atomic `DeployContract` + `FunctionCall:new` transaction with 50 Tgas and 0 NEAR attached to initialization. It does not sign or broadcast. Do not commit the generated manifest, artifact copy, or unsigned transaction.
+
+After a human explicitly authorizes and signs/broadcasts that exact transaction, fill the public non-secret transaction/receipt/code-hash provenance and run:
+
+```text
+pnpm smoke:testnet -- <contract-account.testnet>
+```
+
+This satisfies the frozen `pnpm smoke:testnet` required check through the accepted narrow `package.json` scope exception. The smoke command is read-only RPC verification, not deployment authorization.
+
 ## View the shell
 
 ```text

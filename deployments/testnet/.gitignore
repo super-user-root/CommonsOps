@@ -1,0 +1,5 @@
+# Account-specific deployment artifacts
+prepared-deployment.json
+unsigned-deploy.transaction
+smoke-result.json
+artifacts/
