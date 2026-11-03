@@ -261,10 +261,14 @@ export function verifyDeploymentTransaction(manifest, transaction) {
   if (receiptIds.some((id) => typeof id !== "string")) {
     throw new Error("Deployment receipt IDs are incomplete");
   }
-  const initReceipt = (transaction.receipts_outcome ?? []).find((entry) =>
-    (entry?.outcome?.logs ?? []).some((log) =>
-      log.includes('"event":"registry_initialized"'),
-    ),
+  const expectedInitReceiptId =
+    transaction.transaction_outcome.outcome.status.SuccessReceiptId;
+  const initReceipt = (transaction.receipts_outcome ?? []).find(
+    (entry) =>
+      entry.id === expectedInitReceiptId &&
+      (entry?.outcome?.logs ?? []).some((log) =>
+        log.includes('"event":"registry_initialized"'),
+      ),
   );
   if (!initReceipt?.block_hash) {
     throw new Error("Successful registry initialization receipt is missing");

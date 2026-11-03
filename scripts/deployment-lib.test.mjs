@@ -177,6 +177,34 @@ test("transaction verifier rejects mismatched transaction identity and unknown o
   }
 });
 
+test("transaction verifier rejects an unrelated initialization event receipt", async () => {
+  const code = await readFile(
+    path.resolve(
+      import.meta.dirname,
+      "../contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
+    ),
+  );
+  const manifest = createDeploymentManifest(input);
+  manifest.transactionHash = "4".repeat(44);
+  manifest.status = "DEPLOYED";
+  const transaction = fakeTransaction(manifest, code);
+  transaction.receipts_outcome[0].outcome.logs = [];
+  transaction.receipts_outcome.push({
+    id: "8".repeat(44),
+    block_hash: "9".repeat(44),
+    outcome: {
+      logs: [
+        'EVENT_JSON:{"standard":"commonsops","version":"1.0.0","event":"registry_initialized","data":[]}',
+      ],
+      status: { SuccessValue: "" },
+    },
+  });
+  assert.throws(
+    () => verifyDeploymentTransaction(manifest, transaction),
+    /initialization receipt is missing/,
+  );
+});
+
 test("base58 NEAR code hash uses SHA-256 bytes", () => {
   const bytes = Buffer.alloc(32);
   const digestBytes = createHash("sha256").update(bytes).digest();
