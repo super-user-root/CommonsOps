@@ -2,6 +2,8 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { test } from "node:test";
 import {
   REVIEWED_CONTRACT_TREE,
@@ -39,9 +41,8 @@ const input = {
   wasmSha256: REVIEWED_WASM_SHA256,
 };
 
-function fakeTransaction(manifest) {
-  const code = Buffer.alloc(REVIEWED_WASM_BYTES);
-  // Transaction-verification tests override reviewed constants by constructing matching fields below only where relevant.
+function fakeTransaction(manifest, code = Buffer.alloc(REVIEWED_WASM_BYTES)) {
+  // Synthetic zero bytes are useful for fail-closed negative cases; positive tests pass reviewed bytes.
   return {
     final_execution_status: "FINAL",
     transaction: {
@@ -130,6 +131,24 @@ test("transaction verifier rejects wrong action order and code", () => {
   );
   transaction.transaction.actions.reverse();
   assert.throws(() => verifyDeploymentTransaction(manifest, transaction));
+});
+
+test("transaction verifier accepts exact reviewed atomic receipt provenance", async () => {
+  const wasmPath = path.resolve(
+    import.meta.dirname,
+    "../contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
+  );
+  const code = await readFile(wasmPath);
+  const manifest = createDeploymentManifest(input);
+  manifest.status = "DEPLOYED";
+  const verified = verifyDeploymentTransaction(
+    manifest,
+    fakeTransaction(manifest, code),
+  );
+  assert.equal(verified.transactionHash, "4".repeat(44));
+  assert.equal(verified.transactionBlockHash, "5".repeat(44));
+  assert.equal(verified.postStateBlockHash, "7".repeat(44));
+  assert.deepEqual(verified.receiptIds, ["6".repeat(44)]);
 });
 
 test("base58 NEAR code hash uses SHA-256 bytes", () => {
