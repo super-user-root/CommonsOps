@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
@@ -38,4 +39,7 @@ test("release WASM is valid and exposes the exact registry linkage API", async (
   assert.ok(imports.length > 0, "NEAR host imports must exist");
   assert.ok(imports.every((entry) => entry.module === "env"));
   assert.ok(!imports.some((entry) => /promise_/.test(entry.name)));
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  assert.match(digest, /^[a-f0-9]{64}$/);
+  process.stdout.write(`WASM_SHA256=${digest}\nWASM_BYTES=${bytes.length}\n`);
 });
