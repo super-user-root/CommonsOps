@@ -122,25 +122,26 @@ function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function successStatus(status: unknown): boolean {
-  return (
-    typeof status === "object" &&
-    status !== null &&
-    (Object.hasOwn(status, "SuccessValue") ||
-      Object.hasOwn(status, "SuccessReceiptId"))
-  );
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function successReceiptId(status: unknown): string | null {
+  return isObject(status) ? stringValue(status.SuccessReceiptId) : null;
+}
+
+function successValue(status: unknown): boolean {
+  return isObject(status) && typeof status.SuccessValue === "string";
 }
 
 function failureStatus(status: unknown): boolean {
-  return (
-    typeof status === "object" &&
-    status !== null &&
-    Object.hasOwn(status, "Failure")
-  );
+  return isObject(status) && Object.hasOwn(status, "Failure");
 }
 
 function actions(value: unknown): readonly RpcAction[] | null {
-  return Array.isArray(value) ? (value as RpcAction[]) : null;
+  return Array.isArray(value) && value.every(isObject)
+    ? (value as RpcAction[])
+    : null;
 }
 
 function decodeProposalAction(action: RpcAction): number | null {
@@ -233,25 +234,22 @@ export function verifyNativeSputnikPayment(
     });
   }
   const txStatus = rpc.transaction_outcome?.outcome?.status;
-  if (!successStatus(txStatus)) {
+  const rootReceiptId = successReceiptId(txStatus);
+  if (!rootReceiptId) {
     return result(
       failureStatus(txStatus) ? "FAILED" : "UNKNOWN",
-      "Proposal transaction outcome is not successful",
+      "Proposal transaction outcome is not a successful receipt",
       { transactionHash },
     );
   }
-  const rootReceiptId =
-    typeof txStatus === "object" && txStatus !== null
-      ? stringValue(
-          (txStatus as { SuccessReceiptId?: unknown }).SuccessReceiptId,
-        )
+  const receipts =
+    Array.isArray(rpc.receipts) && rpc.receipts.every(isObject)
+      ? (rpc.receipts as RpcReceipt[])
       : null;
-  const receipts = Array.isArray(rpc.receipts)
-    ? (rpc.receipts as RpcReceipt[])
-    : null;
-  const outcomes = Array.isArray(rpc.receipts_outcome)
-    ? (rpc.receipts_outcome as RpcOutcome[])
-    : null;
+  const outcomes =
+    Array.isArray(rpc.receipts_outcome) && rpc.receipts_outcome.every(isObject)
+      ? (rpc.receipts_outcome as RpcOutcome[])
+      : null;
   if (!rootReceiptId || !receipts || !outcomes) {
     return result("UNKNOWN", "Receipt graph is incomplete", {
       transactionHash,
@@ -268,13 +266,37 @@ export function verifyNativeSputnikPayment(
       transactionHash,
     });
   }
-  const actionStatus = actionOutcome.outcome?.status;
-  if (!successStatus(actionStatus)) {
+  const actionReceiptActions = actions(actionReceipt.receipt?.Action?.actions);
+  const onlyActionReceiptAction = actionReceiptActions?.[0];
+  if (
+    actionReceipt.receiver_id !== expected.daoAccountId ||
+    !actionReceiptActions ||
+    actionReceiptActions.length !== 1 ||
+    !onlyActionReceiptAction ||
+    String(decodeProposalAction(onlyActionReceiptAction)) !==
+      expected.proposalId
+  ) {
     return result(
-      failureStatus(actionStatus) ? "FAILED" : "UNKNOWN",
-      "Proposal action receipt did not succeed",
-      { transactionHash, actionReceiptId: rootReceiptId },
+      "INVALID",
+      "Proposal action receipt does not match linked proposal",
+      {
+        transactionHash,
+        actionReceiptId: rootReceiptId,
+      },
     );
+  }
+  const actionStatus = actionOutcome.outcome?.status;
+  if (failureStatus(actionStatus)) {
+    return result("FAILED", "Proposal action receipt failed", {
+      transactionHash,
+      actionReceiptId: rootReceiptId,
+    });
+  }
+  if (!successReceiptId(actionStatus) && !successValue(actionStatus)) {
+    return result("UNKNOWN", "Proposal action receipt outcome is unknown", {
+      transactionHash,
+      actionReceiptId: rootReceiptId,
+    });
   }
   const childIds = Array.isArray(actionOutcome.outcome?.receipt_ids)
     ? (actionOutcome.outcome.receipt_ids as unknown[]).filter(
@@ -287,33 +309,72 @@ export function verifyNativeSputnikPayment(
       actionReceiptId: rootReceiptId,
     });
   }
+  let incompleteCandidate = false;
+  let failedCandidate = false;
   const matches = childIds.flatMap((receiptId) => {
     const receipt = receipts.find(
       (candidate) => candidate.receipt_id === receiptId,
     );
     const outcome = outcomes.find((candidate) => candidate.id === receiptId);
-    const receiptActions = actions(receipt?.receipt?.Action?.actions);
+    if (!receipt || !outcome) {
+      incompleteCandidate = true;
+      return [];
+    }
+    const receiptActions = actions(receipt.receipt?.Action?.actions);
     const onlyReceiptAction = receiptActions?.[0];
     if (
-      !receipt ||
-      !outcome ||
       receipt.predecessor_id !== expected.daoAccountId ||
-      receipt.receiver_id !== expected.recipientId ||
-      !receiptActions ||
-      receiptActions.length !== 1 ||
-      !onlyReceiptAction ||
-      decimal(onlyReceiptAction.Transfer?.deposit) !== expected.amountYocto
+      receipt.receiver_id !== expected.recipientId
     ) {
       return [];
     }
-    if (!successStatus(outcome.outcome?.status)) return [];
-    return [{ receiptId, blockHash: stringValue(outcome.block_hash) }];
+    if (!receiptActions || receiptActions.length !== 1 || !onlyReceiptAction) {
+      incompleteCandidate = true;
+      return [];
+    }
+    if (decimal(onlyReceiptAction.Transfer?.deposit) !== expected.amountYocto) {
+      return [];
+    }
+    if (failureStatus(outcome.outcome?.status)) {
+      failedCandidate = true;
+      return [];
+    }
+    if (!successValue(outcome.outcome?.status)) {
+      incompleteCandidate = true;
+      return [];
+    }
+    const blockHash = stringValue(outcome.block_hash);
+    if (!blockHash) {
+      incompleteCandidate = true;
+      return [];
+    }
+    return [{ receiptId, blockHash }];
   });
   if (matches.length === 0) {
-    return result("FAILED", "No successful causal payout receipt matches", {
-      transactionHash,
-      actionReceiptId: rootReceiptId,
-    });
+    if (incompleteCandidate) {
+      return result(
+        "UNKNOWN",
+        "Payout receipt evidence is incomplete or unknown",
+        {
+          transactionHash,
+          actionReceiptId: rootReceiptId,
+        },
+      );
+    }
+    if (failedCandidate) {
+      return result("FAILED", "Matching payout receipt failed", {
+        transactionHash,
+        actionReceiptId: rootReceiptId,
+      });
+    }
+    return result(
+      "FAILED",
+      "No causal payout receipt matches expected payment",
+      {
+        transactionHash,
+        actionReceiptId: rootReceiptId,
+      },
+    );
   }
   const match = matches[0];
   if (matches.length !== 1 || !match?.blockHash) {

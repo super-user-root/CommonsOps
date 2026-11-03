@@ -79,7 +79,7 @@ test("returns failed for final vote whose proposal receipt failed", async () => 
     await fixture("proposal-62-failed.json"),
   );
   assert.equal(result.state, "FAILED");
-  assert.match(result.reason, /action receipt did not succeed/);
+  assert.match(result.reason, /action receipt failed/);
   assert.equal(result.payoutReceiptId, null);
 });
 
@@ -117,6 +117,53 @@ test("rejects wrong proposal, amount, recipient and unsupported profile", async 
       paid,
     ).state,
     "UNKNOWN",
+  );
+});
+
+test("native payout requires SuccessValue and malformed graph stays unknown", async () => {
+  const paid = await fixture("proposal-63-paid.json");
+  const payoutId = "H7tr1j2QAcFx3ibwqKeSHtBwpiaFYRaUfPbj6YzBddgJ";
+  const changedStatus = structuredClone(paid);
+  changedStatus.result.receipts_outcome.find(
+    (entry: { id: string }) => entry.id === payoutId,
+  ).outcome.status = { SuccessReceiptId: "child" };
+  assert.equal(
+    verifyNativeSputnikPayment(expected, proposal, changedStatus).state,
+    "UNKNOWN",
+  );
+
+  const missingOutcome = structuredClone(paid);
+  missingOutcome.result.receipts_outcome =
+    missingOutcome.result.receipts_outcome.filter(
+      (entry: { id: string }) => entry.id !== payoutId,
+    );
+  assert.equal(
+    verifyNativeSputnikPayment(expected, proposal, missingOutcome).state,
+    "UNKNOWN",
+  );
+
+  const nullPrefix = structuredClone(paid);
+  nullPrefix.result.receipts.unshift(null);
+  assert.equal(
+    verifyNativeSputnikPayment(expected, proposal, nullPrefix).state,
+    "UNKNOWN",
+  );
+});
+
+test("root action receipt is independently bound to act_proposal", async () => {
+  const paid = await fixture("proposal-63-paid.json");
+  const changedReceiver = structuredClone(paid);
+  changedReceiver.result.receipts[0].receiver_id = "other.sputnikv2.testnet";
+  assert.equal(
+    verifyNativeSputnikPayment(expected, proposal, changedReceiver).state,
+    "INVALID",
+  );
+
+  const missingAction = structuredClone(paid);
+  missingAction.result.receipts[0].receipt.Action.actions = [];
+  assert.equal(
+    verifyNativeSputnikPayment(expected, proposal, missingAction).state,
+    "INVALID",
   );
 });
 
