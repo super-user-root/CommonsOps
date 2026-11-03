@@ -866,6 +866,87 @@ fn missing_proposal_view_is_none() {
 }
 
 #[test]
+fn adversarial_sequence_preserves_invariants_across_periods() {
+    let mut registry = init();
+    create_funded(&mut registry);
+    for period in 0..4u64 {
+        let opens = 100 + period * 1000;
+        operator_at(opens, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+        let key = registry.materialize_cycle(U64(0)).key;
+        contributor_at(
+            if period % 2 == 0 {
+                "alice.testnet"
+            } else {
+                "bob.testnet"
+            },
+            opens,
+        );
+        registry.claim_cycle(key.clone());
+        if period == 1 {
+            contributor_at("bob.testnet", opens + 50);
+            registry.release_claim(key.clone());
+            contributor_at("carol.testnet", opens + 51);
+            registry.claim_cycle(key.clone());
+        }
+        let claimant = registry
+            .get_cycle(key.clone())
+            .unwrap()
+            .claim
+            .unwrap()
+            .claimant_id;
+        contributor_at(claimant.as_str(), opens + 52);
+        registry.submit_evidence(
+            key.clone(),
+            "example".to_owned(),
+            "docs".to_owned(),
+            U64(period + 1),
+            format!("{:040x}", period + 1),
+        );
+        operator_at(opens + 53, 0);
+        let proposal_id = U64(100 + period);
+        let linked = registry.link_proposal(key.clone(), proposal_id);
+        linked.validate();
+        assert_eq!(
+            registry
+                .get_proposal_cycle(linked.proposal_link.unwrap().key)
+                .unwrap(),
+            key
+        );
+    }
+    assert_eq!(registry.cycle_count, 4);
+    assert_eq!(
+        registry.get_template(U64(0)).unwrap().next_period_index.0,
+        4
+    );
+}
+
+#[test]
+fn rejected_actions_do_not_change_serialized_contract_state() {
+    let (mut registry, key) = submitted_cycle();
+    operator_at(102, 0);
+    registry.link_proposal(key.clone(), U64(63));
+    let baseline = near_sdk::borsh::to_vec(&registry).unwrap();
+
+    contributor_at("attacker.testnet", 103);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            registry.link_proposal(key.clone(), U64(64));
+        }))
+        .is_err()
+    );
+    assert_eq!(near_sdk::borsh::to_vec(&registry).unwrap(), baseline);
+
+    contributor_at("attacker.testnet", 103);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            registry.claim_cycle(key.clone());
+        }))
+        .is_err()
+    );
+    assert_eq!(near_sdk::borsh::to_vec(&registry).unwrap(), baseline);
+}
+
+#[test]
 fn storage_prefixes_are_distinct() {
     let keys = [
         StorageKey::Templates,
