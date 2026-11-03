@@ -198,6 +198,154 @@ impl Registry {
     pub fn get_cycle(&self, cycle_key: CycleKey) -> Option<Cycle> {
         self.cycles.get(&cycle_key).cloned()
     }
+
+    pub fn claim_cycle(&mut self, cycle_key: CycleKey) -> Cycle {
+        assert_zero_deposit();
+        let caller = assert_direct_caller();
+        let now_ns = env::block_timestamp();
+        let template = self
+            .templates
+            .get(&cycle_key.template_id.0)
+            .expect("ERR_TEMPLATE_NOT_FOUND");
+        let claim_duration_ns = template.input.claim_duration_ns.0;
+        let cycle = self
+            .cycles
+            .get_mut(&cycle_key)
+            .expect("ERR_CYCLE_NOT_FOUND");
+        assert!(cycle.status == CycleStatus::Open, "ERR_CYCLE_NOT_OPEN");
+        assert!(
+            now_ns >= cycle.opens_at_ns.0 && now_ns < cycle.deadline_at_ns.0,
+            "ERR_CLAIM_WINDOW_CLOSED"
+        );
+        let claim = Claim {
+            claimant_id: caller.clone(),
+            payout_recipient_id: caller,
+            expires_at_ns: U64(checked_claim_expiry(
+                now_ns,
+                claim_duration_ns,
+                cycle.deadline_at_ns.0,
+            )),
+        };
+        claim.validate();
+        cycle.claim = Some(claim);
+        cycle.status = CycleStatus::Claimed;
+        cycle.validate();
+        let updated = cycle.clone();
+        self.cycles.flush();
+        self.assert_storage_backed();
+        emit_event("cycle_claimed", &updated);
+        updated
+    }
+
+    pub fn release_claim(&mut self, cycle_key: CycleKey) -> Cycle {
+        assert_zero_deposit();
+        let caller = assert_direct_caller();
+        let now_ns = env::block_timestamp();
+        let cycle = self
+            .cycles
+            .get_mut(&cycle_key)
+            .expect("ERR_CYCLE_NOT_FOUND");
+        assert!(
+            cycle.status == CycleStatus::Claimed,
+            "ERR_CYCLE_NOT_CLAIMED"
+        );
+        let claim = cycle.claim.as_ref().expect("ERR_CLAIM_NOT_FOUND");
+        assert!(claim.claimant_id == caller, "ERR_NOT_CLAIMANT");
+        assert!(
+            claim.is_active(now_ns, cycle.deadline_at_ns.0),
+            "ERR_CLAIM_EXPIRED"
+        );
+        cycle.claim = None;
+        cycle.status = CycleStatus::Open;
+        cycle.validate();
+        let updated = cycle.clone();
+        self.cycles.flush();
+        emit_event("claim_released", &updated);
+        updated
+    }
+
+    pub fn expire_cycle_or_claim(&mut self, cycle_key: CycleKey) -> Cycle {
+        assert_zero_deposit();
+        assert_direct_caller();
+        let now_ns = env::block_timestamp();
+        let cycle = self
+            .cycles
+            .get_mut(&cycle_key)
+            .expect("ERR_CYCLE_NOT_FOUND");
+        assert!(
+            matches!(cycle.status, CycleStatus::Open | CycleStatus::Claimed),
+            "ERR_CYCLE_NOT_EXPIRABLE"
+        );
+        let work_expired = now_ns >= cycle.deadline_at_ns.0;
+        let claim_expired = cycle
+            .claim
+            .as_ref()
+            .is_some_and(|claim| now_ns >= claim.expires_at_ns.0);
+        assert!(work_expired || claim_expired, "ERR_NOT_EXPIRED");
+        cycle.claim = None;
+        cycle.status = if work_expired {
+            CycleStatus::Expired
+        } else {
+            CycleStatus::Open
+        };
+        cycle.validate();
+        let updated = cycle.clone();
+        self.cycles.flush();
+        emit_event(
+            if work_expired {
+                "cycle_expired"
+            } else {
+                "claim_expired"
+            },
+            &updated,
+        );
+        updated
+    }
+
+    pub fn submit_evidence(
+        &mut self,
+        cycle_key: CycleKey,
+        repository_owner: String,
+        repository_name: String,
+        pull_request_number: U64,
+        commit_sha: String,
+    ) -> Cycle {
+        assert_zero_deposit();
+        let caller = assert_direct_caller();
+        let now_ns = env::block_timestamp();
+        let cycle = self
+            .cycles
+            .get_mut(&cycle_key)
+            .expect("ERR_CYCLE_NOT_FOUND");
+        assert!(
+            cycle.status == CycleStatus::Claimed,
+            "ERR_CYCLE_NOT_CLAIMED"
+        );
+        let claim = cycle.claim.as_ref().expect("ERR_CLAIM_NOT_FOUND");
+        assert!(claim.claimant_id == caller, "ERR_NOT_CLAIMANT");
+        assert!(
+            claim.is_active(now_ns, cycle.deadline_at_ns.0),
+            "ERR_CLAIM_EXPIRED"
+        );
+        assert!(
+            cycle.evidence.is_none() && cycle.submitted_at_ns.is_none(),
+            "ERR_ALREADY_SUBMITTED"
+        );
+        cycle.evidence = Some(Evidence::normalize(
+            &repository_owner,
+            &repository_name,
+            pull_request_number.0,
+            &commit_sha,
+        ));
+        cycle.submitted_at_ns = Some(U64(now_ns));
+        cycle.status = CycleStatus::Submitted;
+        cycle.validate();
+        let updated = cycle.clone();
+        self.cycles.flush();
+        self.assert_storage_backed();
+        emit_event("evidence_submitted", &updated);
+        updated
+    }
 }
 
 fn emit_event(event: &str, data: &impl near_sdk::serde::Serialize) {

@@ -545,6 +545,193 @@ fn missing_views_are_none() {
     );
 }
 
+fn open_cycle() -> (Registry, CycleKey) {
+    let mut registry = init();
+    create_funded(&mut registry);
+    operator_at(100, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    let cycle = registry.materialize_cycle(U64(0));
+    (registry, cycle.key)
+}
+
+fn contributor_at(name: &str, now_ns: u64) {
+    testing_env!(
+        VMContextBuilder::new()
+            .current_account_id(account("registry.testnet"))
+            .signer_account_id(account(name))
+            .predecessor_account_id(account(name))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .account_balance(NearToken::from_near(10))
+            .block_timestamp(now_ns)
+            .build()
+    );
+}
+
+#[test]
+fn contributor_claims_releases_and_another_contributor_claims() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    let first = registry.claim_cycle(key.clone());
+    assert_eq!(first.status, CycleStatus::Claimed);
+    assert_eq!(
+        first.claim.as_ref().unwrap().claimant_id,
+        account("alice.testnet")
+    );
+    assert_eq!(
+        first.claim.as_ref().unwrap().payout_recipient_id,
+        account("alice.testnet")
+    );
+    assert_eq!(first.claim.as_ref().unwrap().expires_at_ns.0, 200);
+    let released = registry.release_claim(key.clone());
+    assert_eq!(released.status, CycleStatus::Open);
+    assert!(released.claim.is_none());
+    contributor_at("bob.testnet", 101);
+    let second = registry.claim_cycle(key);
+    assert_eq!(second.claim.unwrap().claimant_id, account("bob.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "ERR_CYCLE_NOT_OPEN")]
+fn double_claim_rejected() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("bob.testnet", 101);
+    registry.claim_cycle(key);
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_CLAIMANT")]
+fn another_contributor_cannot_release() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("bob.testnet", 101);
+    registry.release_claim(key);
+}
+
+#[test]
+fn expired_claim_is_cleared_and_reassignable() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("settler.testnet", 200);
+    let reopened = registry.expire_cycle_or_claim(key.clone());
+    assert_eq!(reopened.status, CycleStatus::Open);
+    assert!(reopened.claim.is_none());
+    contributor_at("bob.testnet", 200);
+    assert_eq!(
+        registry.claim_cycle(key).claim.unwrap().claimant_id,
+        account("bob.testnet")
+    );
+}
+
+#[test]
+fn exact_cycle_deadline_is_terminal_expiry() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 599);
+    let claimed = registry.claim_cycle(key.clone());
+    assert_eq!(claimed.claim.unwrap().expires_at_ns.0, 600);
+    contributor_at("settler.testnet", 600);
+    let expired = registry.expire_cycle_or_claim(key.clone());
+    assert_eq!(expired.status, CycleStatus::Expired);
+    assert!(expired.claim.is_none());
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| registry.claim_cycle(key)))
+            .is_err()
+    );
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_EXPIRED")]
+fn early_expiry_settlement_rejected() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("settler.testnet", 199);
+    registry.expire_cycle_or_claim(key);
+}
+
+#[test]
+fn claimant_submits_canonical_immutable_evidence() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("alice.testnet", 199);
+    let submitted = registry.submit_evidence(
+        key.clone(),
+        "Example".to_owned(),
+        "Docs".to_owned(),
+        U64(42),
+        "AB".repeat(20),
+    );
+    assert_eq!(submitted.status, CycleStatus::Submitted);
+    assert_eq!(
+        submitted.claim.as_ref().unwrap().payout_recipient_id,
+        account("alice.testnet")
+    );
+    assert_eq!(
+        submitted.evidence.as_ref().unwrap().url,
+        "https://github.com/example/docs/pull/42"
+    );
+    assert_eq!(submitted.submitted_at_ns, Some(U64(199)));
+    assert_eq!(registry.get_cycle(key).unwrap(), submitted);
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_CLAIMANT")]
+fn nonclaimant_cannot_submit() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("bob.testnet", 101);
+    registry.submit_evidence(
+        key,
+        "example".to_owned(),
+        "docs".to_owned(),
+        U64(1),
+        "a".repeat(40),
+    );
+}
+
+#[test]
+#[should_panic(expected = "ERR_CLAIM_EXPIRED")]
+fn stale_claimant_cannot_submit_at_expiry() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("alice.testnet", 200);
+    registry.submit_evidence(
+        key,
+        "example".to_owned(),
+        "docs".to_owned(),
+        U64(1),
+        "a".repeat(40),
+    );
+}
+
+#[test]
+#[should_panic(expected = "ERR_CYCLE_NOT_CLAIMED")]
+fn submitted_evidence_cannot_be_replaced() {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("alice.testnet", 101);
+    registry.submit_evidence(
+        key.clone(),
+        "example".to_owned(),
+        "docs".to_owned(),
+        U64(1),
+        "a".repeat(40),
+    );
+    registry.submit_evidence(
+        key,
+        "example".to_owned(),
+        "docs".to_owned(),
+        U64(2),
+        "b".repeat(40),
+    );
+}
+
 #[test]
 fn storage_prefixes_are_distinct() {
     let keys = [
