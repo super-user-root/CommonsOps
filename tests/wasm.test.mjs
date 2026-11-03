@@ -7,7 +7,7 @@ const wasmPath = new URL(
   import.meta.url,
 );
 
-test("release WASM is valid and exposes the exact registry claim API", async () => {
+test("release WASM is valid and exposes the exact registry linkage API", async () => {
   const bytes = await readFile(wasmPath);
   assert.ok(bytes.length > 8, "WASM artifact must not be empty");
   assert.ok(WebAssembly.validate(bytes));
@@ -24,7 +24,9 @@ test("release WASM is valid and exposes the exact registry claim API", async () 
     "expire_cycle_or_claim",
     "foundation_status",
     "get_cycle",
+    "get_proposal_cycle",
     "get_template",
+    "link_proposal",
     "materialize_cycle",
     "new",
     "release_claim",
