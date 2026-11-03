@@ -6,7 +6,8 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
-  REVIEWED_SOURCE_HEAD,
+  REVIEWED_CONTRACT_TREE,
+  REVIEWED_NEAR_CLI,
   REVIEWED_WASM_BYTES,
   REVIEWED_WASM_SHA256,
   bashCommand,
@@ -39,9 +40,23 @@ const sourceHead = (
     windowsHide: true,
   })
 ).stdout.trim();
-if (sourceHead !== REVIEWED_SOURCE_HEAD) {
+const contractTree = (
+  await execFileAsync("git", ["rev-parse", "HEAD:contracts/registry"], {
+    cwd: root,
+    windowsHide: true,
+  })
+).stdout.trim();
+if (contractTree !== REVIEWED_CONTRACT_TREE) {
   throw new Error(
-    `Checkout HEAD ${sourceHead} is not reviewed ${REVIEWED_SOURCE_HEAD}`,
+    `Contract tree ${contractTree} is not reviewed ${REVIEWED_CONTRACT_TREE}`,
+  );
+}
+const cliVersion = (
+  await execFileAsync("near", ["--version"], { cwd: root, windowsHide: true })
+).stdout.trim();
+if (cliVersion !== REVIEWED_NEAR_CLI) {
+  throw new Error(
+    `near CLI ${cliVersion} is not reviewed ${REVIEWED_NEAR_CLI}`,
   );
 }
 const status = (
@@ -113,6 +128,7 @@ const manifest = createDeploymentManifest({
   blockHash,
   preDeployment,
   sourceHead,
+  contractTree,
   wasmBytes: bytes.length,
   wasmSha256: digest,
 });

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import {
+  REVIEWED_CONTRACT_TREE,
   REVIEWED_SOURCE_HEAD,
   REVIEWED_WASM_BYTES,
   REVIEWED_WASM_SHA256,
@@ -33,6 +34,7 @@ const input = {
     locked: "0",
   },
   sourceHead: REVIEWED_SOURCE_HEAD,
+  contractTree: REVIEWED_CONTRACT_TREE,
   wasmBytes: REVIEWED_WASM_BYTES,
   wasmSha256: REVIEWED_WASM_SHA256,
 };
@@ -65,7 +67,16 @@ function fakeTransaction(manifest) {
       outcome: { status: { SuccessReceiptId: "6".repeat(44) } },
     },
     receipts_outcome: [
-      { id: "6".repeat(44), outcome: { status: { SuccessValue: "" } } },
+      {
+        id: "6".repeat(44),
+        block_hash: "7".repeat(44),
+        outcome: {
+          logs: [
+            'EVENT_JSON:{"standard":"commonsops","version":"1.0.0","event":"registry_initialized","data":[]}',
+          ],
+          status: { SuccessValue: "" },
+        },
+      },
     ],
   };
 }
@@ -97,7 +108,7 @@ test("rejects mainnet, unreviewed source, artifact, and incomplete signer inputs
     validateTestnetAccount("registry.near", "contract account"),
   );
   for (const patch of [
-    { sourceHead: "a".repeat(40) },
+    { contractTree: "a".repeat(40) },
     { wasmSha256: "b".repeat(64) },
     { wasmBytes: 0 },
     { signerPublicKey: "<PUBLIC_KEY>" },

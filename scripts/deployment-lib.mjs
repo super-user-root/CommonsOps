@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
 export const REVIEWED_SOURCE_HEAD = "27b631a15745859b92572349d60425dd2d1a6ed9";
+export const REVIEWED_CONTRACT_TREE =
+  "979db78a521e045676db8dd0564b8d17d24ab8bc";
 export const REVIEWED_WASM_SHA256 =
   "9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c";
 export const REVIEWED_WASM_BYTES = 261_226;
@@ -22,9 +24,13 @@ export function wasmDigest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-export function assertReviewedArtifact({ sourceHead, wasmBytes, wasmSha256 }) {
-  if (sourceHead !== REVIEWED_SOURCE_HEAD) {
-    throw new Error(`Source head is not reviewed: ${sourceHead}`);
+export function assertReviewedArtifact({
+  contractTree,
+  wasmBytes,
+  wasmSha256,
+}) {
+  if (contractTree !== REVIEWED_CONTRACT_TREE) {
+    throw new Error(`Contract tree is not reviewed: ${contractTree}`);
   }
   if (
     wasmSha256 !== REVIEWED_WASM_SHA256 ||
@@ -42,11 +48,18 @@ export function createDeploymentManifest({
   blockHash,
   preDeployment,
   sourceHead,
+  contractTree,
   wasmBytes,
   wasmSha256,
 }) {
   validateTestnetAccount(accountId, "contract account");
   validateTestnetAccount(managerId, "manager account");
+  if (!/^[a-f0-9]{40}$/.test(sourceHead)) {
+    throw new Error("sourceHead must be a full lower-case Git SHA");
+  }
+  if (contractTree !== REVIEWED_CONTRACT_TREE) {
+    throw new Error(`Contract tree is not reviewed: ${contractTree}`);
+  }
   if (!/^ed25519:[1-9A-HJ-NP-Za-km-z]{40,50}$/.test(signerPublicKey)) {
     throw new Error("signerPublicKey must be an ed25519 public key");
   }
@@ -66,7 +79,7 @@ export function createDeploymentManifest({
       "preDeployment must pin account state to the access-key block",
     );
   }
-  assertReviewedArtifact({ sourceHead, wasmBytes, wasmSha256 });
+  assertReviewedArtifact({ contractTree, wasmBytes, wasmSha256 });
   const artifactPath = `deployments/testnet/artifacts/${wasmSha256}.wasm`;
   const initArgs = { manager_id: managerId, network: "TESTNET" };
   const unsignedCommandArgs = [
@@ -105,6 +118,8 @@ export function createDeploymentManifest({
     signerAccountId: accountId,
     signerPublicKey,
     sourceHead,
+    reviewedSourceHead: REVIEWED_SOURCE_HEAD,
+    contractTree,
     artifactPath,
     wasmSha256,
     wasmBytes,
@@ -180,8 +195,11 @@ export async function rpcCall(method, params, fetchImpl = fetch) {
 }
 
 export function verifyDeploymentTransaction(manifest, transaction) {
-  if (manifest.status !== "PREPARED_UNSIGNED") {
-    throw new Error("Manifest must be PREPARED_UNSIGNED before verification");
+  if (
+    !manifest ||
+    !["PREPARED_UNSIGNED", "DEPLOYED"].includes(manifest.status)
+  ) {
+    throw new Error("Manifest has invalid deployment lifecycle state");
   }
   if (!transaction || transaction.final_execution_status !== "FINAL") {
     throw new Error("Deployment transaction is not final");
@@ -205,7 +223,7 @@ export function verifyDeploymentTransaction(manifest, transaction) {
   }
   const code = Buffer.from(codeBase64, "base64");
   assertReviewedArtifact({
-    sourceHead: manifest.sourceHead,
+    contractTree: manifest.contractTree,
     wasmBytes: code.length,
     wasmSha256: wasmDigest(code),
   });
@@ -235,9 +253,18 @@ export function verifyDeploymentTransaction(manifest, transaction) {
   if (receiptIds.some((id) => typeof id !== "string")) {
     throw new Error("Deployment receipt IDs are incomplete");
   }
+  const initReceipt = (transaction.receipts_outcome ?? []).find((entry) =>
+    (entry?.outcome?.logs ?? []).some((log) =>
+      log.includes('"event":"registry_initialized"'),
+    ),
+  );
+  if (!initReceipt?.block_hash) {
+    throw new Error("Successful registry initialization receipt is missing");
+  }
   return {
     transactionHash: transaction.transaction.hash,
-    finalizedBlockHash: transaction.transaction_outcome.block_hash,
+    transactionBlockHash: transaction.transaction_outcome.block_hash,
+    postStateBlockHash: initReceipt.block_hash,
     receiptIds,
     reviewedCodeHash: nearCodeHash(code),
   };

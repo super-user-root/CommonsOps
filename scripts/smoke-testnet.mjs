@@ -45,7 +45,7 @@ const verified = verifyDeploymentTransaction(manifest, transaction);
 if (JSON.stringify(verified.receiptIds) !== JSON.stringify(manifest.receipts)) {
   throw new Error("Manifest receipt IDs differ from finalized transaction");
 }
-const pinnedBlock = verified.finalizedBlockHash;
+const pinnedBlock = verified.postStateBlockHash;
 const account = await rpcCall("query", {
   request_type: "view_account",
   block_id: pinnedBlock,
