@@ -7,7 +7,7 @@ const wasmPath = new URL(
   import.meta.url,
 );
 
-test("release WASM is valid and exposes the exact registry template API", async () => {
+test("release WASM is valid and exposes the exact registry claim API", async () => {
   const bytes = await readFile(wasmPath);
   assert.ok(bytes.length > 8, "WASM artifact must not be empty");
   assert.ok(WebAssembly.validate(bytes));
@@ -18,15 +18,19 @@ test("release WASM is valid and exposes the exact registry template API", async 
     .sort();
   // near-sdk adds the standard NEP-330 source-metadata view automatically.
   assert.deepEqual(functions, [
+    "claim_cycle",
     "contract_source_metadata",
     "create_template",
+    "expire_cycle_or_claim",
     "foundation_status",
     "get_cycle",
     "get_template",
     "materialize_cycle",
     "new",
+    "release_claim",
     "set_template_active",
     "skip_expired_periods",
+    "submit_evidence",
   ]);
   const imports = WebAssembly.Module.imports(module);
   assert.ok(imports.length > 0, "NEAR host imports must exist");
