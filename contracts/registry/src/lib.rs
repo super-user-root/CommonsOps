@@ -346,6 +346,44 @@ impl Registry {
         emit_event("evidence_submitted", &updated);
         updated
     }
+
+    pub fn link_proposal(&mut self, cycle_key: CycleKey, proposal_id: U64) -> Cycle {
+        assert_zero_deposit();
+        self.assert_manager();
+        let now_ns = env::block_timestamp();
+        let cycle = self.cycles.get(&cycle_key).expect("ERR_CYCLE_NOT_FOUND");
+        assert!(
+            cycle.status == CycleStatus::Submitted,
+            "ERR_CYCLE_NOT_SUBMITTED"
+        );
+        assert!(cycle.proposal_link.is_none(), "ERR_PROPOSAL_ALREADY_LINKED");
+        let proposal_key = ProposalKey {
+            network: self.network,
+            dao_account_id: cycle.dao_account_id.clone(),
+            proposal_id,
+        };
+        assert!(
+            !self.proposal_links.contains_key(&proposal_key),
+            "ERR_PROPOSAL_REPLAY"
+        );
+        let link = ProposalLink {
+            key: proposal_key.clone(),
+            linked_at_ns: U64(now_ns),
+        };
+        self.proposal_links.insert(proposal_key, cycle_key.clone());
+        self.cycles.get_mut(&cycle_key).unwrap().proposal_link = Some(link);
+        let updated = self.cycles.get(&cycle_key).unwrap().clone();
+        updated.validate();
+        self.proposal_links.flush();
+        self.cycles.flush();
+        self.assert_storage_backed();
+        emit_event("proposal_linked", &updated);
+        updated
+    }
+
+    pub fn get_proposal_cycle(&self, proposal_key: ProposalKey) -> Option<CycleKey> {
+        self.proposal_links.get(&proposal_key).cloned()
+    }
 }
 
 fn emit_event(event: &str, data: &impl near_sdk::serde::Serialize) {

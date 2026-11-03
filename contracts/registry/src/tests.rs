@@ -732,6 +732,139 @@ fn submitted_evidence_cannot_be_replaced() {
     );
 }
 
+fn submitted_cycle() -> (Registry, CycleKey) {
+    let (mut registry, key) = open_cycle();
+    contributor_at("alice.testnet", 100);
+    registry.claim_cycle(key.clone());
+    contributor_at("alice.testnet", 101);
+    registry.submit_evidence(
+        key.clone(),
+        "example".to_owned(),
+        "docs".to_owned(),
+        U64(1),
+        "a".repeat(40),
+    );
+    (registry, key)
+}
+
+#[test]
+fn manager_links_submitted_cycle_once() {
+    let (mut registry, key) = submitted_cycle();
+    operator_at(102, 0);
+    let linked = registry.link_proposal(key.clone(), U64(63));
+    let proposal_key = ProposalKey {
+        network: Network::Testnet,
+        dao_account_id: account("community.sputnikv2.testnet"),
+        proposal_id: U64(63),
+    };
+    assert_eq!(linked.proposal_link.as_ref().unwrap().key, proposal_key);
+    assert_eq!(linked.proposal_link.as_ref().unwrap().linked_at_ns.0, 102);
+    assert_eq!(registry.get_proposal_cycle(proposal_key), Some(key));
+    assert_eq!(
+        linked.claim.as_ref().unwrap().payout_recipient_id,
+        account("alice.testnet")
+    );
+    assert_eq!(linked.amount_yocto, input().amount_yocto);
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_MANAGER")]
+fn contributor_cannot_link_proposal() {
+    let (mut registry, key) = submitted_cycle();
+    contributor_at("alice.testnet", 102);
+    registry.link_proposal(key, U64(63));
+}
+
+#[test]
+#[should_panic(expected = "ERR_CYCLE_NOT_SUBMITTED")]
+fn unsubmitted_cycle_cannot_link() {
+    let (mut registry, key) = open_cycle();
+    operator_at(102, 0);
+    registry.link_proposal(key, U64(63));
+}
+
+#[test]
+#[should_panic(expected = "ERR_PROPOSAL_ALREADY_LINKED")]
+fn cycle_link_cannot_be_replaced() {
+    let (mut registry, key) = submitted_cycle();
+    operator_at(102, 0);
+    registry.link_proposal(key.clone(), U64(63));
+    registry.link_proposal(key, U64(64));
+}
+
+#[test]
+#[should_panic(expected = "ERR_PROPOSAL_REPLAY")]
+fn same_proposal_cannot_link_another_cycle() {
+    let (mut registry, first_key) = submitted_cycle();
+    operator_at(102, 0);
+    registry.link_proposal(first_key, U64(63));
+
+    operator_at(1100, storage_reserve_cost(CYCLE_RESERVE_BYTES));
+    let second_key = registry.materialize_cycle(U64(0)).key;
+    contributor_at("bob.testnet", 1100);
+    registry.claim_cycle(second_key.clone());
+    contributor_at("bob.testnet", 1101);
+    registry.submit_evidence(
+        second_key.clone(),
+        "example".to_owned(),
+        "docs".to_owned(),
+        U64(2),
+        "b".repeat(40),
+    );
+    operator_at(1102, 0);
+    registry.link_proposal(second_key, U64(63));
+}
+
+#[test]
+#[should_panic(expected = "ERR_UNEXPECTED_DEPOSIT")]
+fn proposal_link_rejects_attached_deposit() {
+    let (mut registry, key) = submitted_cycle();
+    operator_at(102, 1);
+    registry.link_proposal(key, U64(63));
+}
+
+#[test]
+#[should_panic(expected = "ERR_INDIRECT_CALLER")]
+fn indirect_manager_cannot_link_proposal() {
+    let (mut registry, key) = submitted_cycle();
+    testing_env!(
+        VMContextBuilder::new()
+            .current_account_id(account("registry.testnet"))
+            .signer_account_id(account("manager.testnet"))
+            .predecessor_account_id(account("relay.testnet"))
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .account_balance(NearToken::from_near(10))
+            .block_timestamp(102)
+            .build()
+    );
+    registry.link_proposal(key, U64(63));
+}
+
+#[test]
+fn proposal_network_and_dao_are_snapshotted_by_contract() {
+    let (mut registry, key) = submitted_cycle();
+    operator_at(102, 0);
+    let linked = registry.link_proposal(key, U64(u64::MAX));
+    let proposal = &linked.proposal_link.unwrap().key;
+    assert_eq!(proposal.network, Network::Testnet);
+    assert_eq!(proposal.dao_account_id, linked.dao_account_id);
+    assert_eq!(proposal.proposal_id.0, u64::MAX);
+}
+
+#[test]
+fn missing_proposal_view_is_none() {
+    let registry = init();
+    assert!(
+        registry
+            .get_proposal_cycle(ProposalKey {
+                network: Network::Testnet,
+                dao_account_id: account("missing.sputnikv2.testnet"),
+                proposal_id: U64(0),
+            })
+            .is_none()
+    );
+}
+
 #[test]
 fn storage_prefixes_are_distinct() {
     let keys = [
