@@ -370,6 +370,15 @@ export function verifyNativeSputnikPayment(
       },
     );
   }
+  if (failedCandidate) {
+    // A matching-amount child also failed: when a bond refund and the payout
+    // carry identical amounts, the surviving success cannot be attributed to
+    // the payout, so the graph is ambiguous rather than paid (ADR §10).
+    return result("AMBIGUOUS", "Payout receipt attribution is ambiguous", {
+      transactionHash,
+      actionReceiptId: rootReceiptId,
+    });
+  }
   const match = matches[0];
   if (matches.length !== 1 || !match?.blockHash) {
     return result("AMBIGUOUS", "Payout receipt attribution is ambiguous", {

@@ -692,6 +692,12 @@ function parseRecord(value: unknown): ReconciliationRecord {
     captured.network,
     "reconciliation record.network",
   );
+  // The canonical read model is pinned to the TESTNET deployment (ADR §4):
+  // reconcilePayment can only produce TESTNET records, so MAINNET records can
+  // never originate from this module and are rejected before any mutation.
+  if (networkValue !== "TESTNET") {
+    throw new Error("reconciliation record.network: TESTNET required");
+  }
   const daoAccountId = accountId(
     captured.daoAccountId,
     "reconciliation record.daoAccountId",
