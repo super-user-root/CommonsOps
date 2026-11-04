@@ -11,6 +11,7 @@ interface ReviewerPanelProps {
   readonly model: ReviewerModel;
   readonly requestState: ReviewerRequestState;
   readonly idScope?: string;
+  readonly headingLevel?: 2 | 3 | 4;
 }
 
 function safeId(value: string): string {
@@ -31,14 +32,17 @@ function requestRole(state: ReviewerRequestState): "alert" | "status" {
 function IntentPreview({
   intent,
   reasonId,
+  headingLevel,
 }: {
   readonly intent: ReviewerTransactionIntent;
   readonly reasonId: string;
+  readonly headingLevel: 3 | 4 | 5;
 }) {
   const label = intentLabel(intent);
+  const Heading = headingLevel === 3 ? "h3" : headingLevel === 4 ? "h4" : "h5";
   return (
     <article className="intent-preview">
-      <h3>{label}</h3>
+      <Heading>{label}</Heading>
       <dl>
         <div>
           <dt>Network</dt>
@@ -79,7 +83,12 @@ export function ReviewerPanel({
   model,
   requestState,
   idScope,
+  headingLevel = 2,
 }: ReviewerPanelProps) {
+  const Heading = headingLevel === 2 ? "h2" : headingLevel === 3 ? "h3" : "h4";
+  const Subheading =
+    headingLevel === 2 ? "h3" : headingLevel === 3 ? "h4" : "h5";
+  const intentHeadingLevel = headingLevel === 2 ? (4 as const) : (5 as const);
   const instanceId = safeId(useId());
   const cycleId = `${model.cycle.key.template_id}:${model.cycle.key.period_index}`;
   const readableScope = safeId(idScope ?? `reviewer-${cycleId}`);
@@ -101,12 +110,12 @@ export function ReviewerPanel({
     >
       <header>
         <p className="eyebrow">Reviewer fixture preview · Testnet</p>
-        <h2 id={headingId}>Cycle {cycleId}</h2>
+        <Heading id={headingId}>Cycle {cycleId}</Heading>
         <p>{model.fixtureNotice}</p>
       </header>
 
       <aside className="binding-notice" id={trustId}>
-        <h3>Trust and authorization boundary</h3>
+        <Subheading>Trust and authorization boundary</Subheading>
         <p>
           This read-only module renders supplied registry and fixture data. It
           performs no RPC, GitHub, wallet, storage, signing, or transaction
@@ -119,7 +128,9 @@ export function ReviewerPanel({
       </aside>
 
       <section aria-labelledby={`${scope}-evidence-heading`}>
-        <h3 id={`${scope}-evidence-heading`}>Immutable submission</h3>
+        <Subheading id={`${scope}-evidence-heading`}>
+          Immutable submission
+        </Subheading>
         <dl className="evidence-preview">
           <div>
             <dt>Registry status</dt>
@@ -160,9 +171,9 @@ export function ReviewerPanel({
       </section>
 
       <section aria-labelledby={`${scope}-proposal-heading`}>
-        <h3 id={`${scope}-proposal-heading`}>
+        <Subheading id={`${scope}-proposal-heading`}>
           Sputnik Transfer proposal preview
-        </h3>
+        </Subheading>
         <p>{model.proposal.description}</p>
         <dl>
           <div>
@@ -203,11 +214,14 @@ export function ReviewerPanel({
         <IntentPreview
           intent={model.addProposalIntent}
           reasonId={addReasonId}
+          headingLevel={intentHeadingLevel}
         />
       </section>
 
       <section aria-labelledby={`${scope}-link-heading`}>
-        <h3 id={`${scope}-link-heading`}>Immutable registry proposal link</h3>
+        <Subheading id={`${scope}-link-heading`}>
+          Immutable registry proposal link
+        </Subheading>
         <dl>
           <div>
             <dt>Link status</dt>
@@ -223,14 +237,20 @@ export function ReviewerPanel({
           </div>
         </dl>
         {model.link.intent ? (
-          <IntentPreview intent={model.link.intent} reasonId={linkReasonId} />
+          <IntentPreview
+            intent={model.link.intent}
+            reasonId={linkReasonId}
+            headingLevel={intentHeadingLevel}
+          />
         ) : (
           <p>No link transaction preview is available.</p>
         )}
       </section>
 
       <section aria-labelledby={`${scope}-payment-heading`}>
-        <h3 id={`${scope}-payment-heading`}>Derived reviewer/payment state</h3>
+        <Subheading id={`${scope}-payment-heading`}>
+          Derived reviewer/payment state
+        </Subheading>
         <dl>
           <div>
             <dt>Derived state</dt>
