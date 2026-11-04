@@ -66,13 +66,24 @@ try {
   assert.equal(response.headers.get("x-powered-by"), null);
   const html = await response.text();
   assert.match(html, /<html[^>]*lang="en"/);
-  assert.match(html, /<title>CommonsOps \| Foundation<\/title>/);
-  assert.match(html, /Foundation \/ not live/);
-  assert.match(html, /A foundation, not a working registry/);
-  assert.match(html, /No wallet\. No live records\. No transactions\./);
+  assert.match(html, /<title>CommonsOps \| Testnet workspace<\/title>/);
+  assert.match(html, /Testnet workspace/);
+  assert.match(
+    html,
+    /Contract and verifier foundations are real\. Live operations are not\./,
+  );
+  assert.match(
+    html,
+    /No keys\. No fabricated records\. No transaction controls\./,
+  );
+  assert.match(html, /Wallet unavailable/);
   assert.ok(
-    !/<(?:form|button)\b/.test(html),
-    "Scaffold must not present transaction controls",
+    !/<form\b/.test(html),
+    "Workspace must not present a transaction form before deployment",
+  );
+  assert.ok(
+    /<button[^>]*disabled/.test(html),
+    "Wallet action must render disabled",
   );
   assert.equal(
     (await fetch(`${url}/not-a-route`, { signal: AbortSignal.timeout(5000) }))
@@ -80,7 +91,7 @@ try {
     404,
   );
   console.log(
-    "PASS production HTTP smoke: foundation page, metadata, no transaction controls, 404",
+    "PASS production HTTP smoke: testnet workspace, disabled wallet, metadata, 404",
   );
 } finally {
   server.kill();

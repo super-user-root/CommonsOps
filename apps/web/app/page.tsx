@@ -1,99 +1,170 @@
+import {
+  createWalletBoundary,
+  emptyRegistryReadState,
+  networkConfigs,
+} from "../lib/config.ts";
 import { siteMetadata } from "../lib/site.ts";
+
+const testnetWallet = createWalletBoundary("TESTNET");
+const walletReason =
+  testnetWallet.state.status === "UNAVAILABLE"
+    ? testnetWallet.state.reason
+    : "Wallet signing is not available.";
+const testnetState = emptyRegistryReadState("TESTNET");
+const mainnetState = emptyRegistryReadState("MAINNET");
 
 export default function HomePage() {
   return (
     <main>
       <header className="masthead">
-        <a className="wordmark" href="#about" aria-label="CommonsOps overview">
+        <a
+          className="wordmark"
+          href="#workspace"
+          aria-label="CommonsOps workspace"
+        >
           <span className="mark" aria-hidden="true">
             C
           </span>
           CommonsOps
         </a>
-        <span className="status">Foundation / not live</span>
+        <div className="header-actions">
+          <span className="network-badge testnet">Testnet workspace</span>
+          <button
+            className="button secondary"
+            type="button"
+            disabled
+            title={walletReason}
+          >
+            Wallet unavailable
+          </button>
+        </div>
       </header>
 
-      <section className="hero" id="about" aria-labelledby="heading">
-        <p className="eyebrow">Community infrastructure · NEAR</p>
+      <section
+        className="hero compact"
+        id="workspace"
+        aria-labelledby="heading"
+      >
+        <p className="eyebrow">Social Money · recurring maintenance</p>
         <h1 id="heading">
-          Keep the commons
+          Make essential work
           <br />
-          <em>worth maintaining.</em>
+          <em>visible and fundable.</em>
         </h1>
         <p className="intro">
-          Public documentation needs recurring care. CommonsOps is being built
-          to connect that work to evidence and an existing Sputnik DAO treasury
-          — without replacing community governance.
+          CommonsOps coordinates recurring public documentation work, freezes
+          contributor evidence on NEAR, and keeps approval and funds inside an
+          existing Sputnik DAO.
         </p>
-        <a className="text-link" href="#foundation">
-          What exists today <span aria-hidden="true">↘</span>
-        </a>
+        <div className="hero-actions">
+          <a className="button primary" href="#network-status">
+            Inspect workspace
+          </a>
+          <span className="microcopy">
+            No wallet signature or transaction is available yet.
+          </span>
+        </div>
       </section>
 
       <section
-        className="foundation"
-        id="foundation"
-        aria-labelledby="foundation-heading"
+        className="network-panel"
+        id="network-status"
+        aria-labelledby="network-heading"
       >
         <div>
-          <p className="eyebrow">Current implementation</p>
-          <h2 id="foundation-heading">A foundation, not a working registry.</h2>
+          <p className="eyebrow">Connection boundary</p>
+          <h2 id="network-heading">Choose evidence, not assumptions.</h2>
           <p>
-            This page is a static project overview. The repository contains a
-            typed package scaffold, a minimal compilable NEAR contract, and
-            local verification checks. Product workflows are not implemented.
+            Testnet and mainnet remain separate configurations. Neither has a
+            deployed CommonsOps registry account, so reads and signing fail
+            closed.
           </p>
+        </div>
+        <div className="network-grid">
+          <article className="network-card selected">
+            <div className="card-heading">
+              <span className="dot" />
+              Testnet
+            </div>
+            <strong>{testnetState.status}</strong>
+            <p>{networkConfigs.TESTNET.rpcUrl}</p>
+            <span className="pill">Development target</span>
+          </article>
+          <article className="network-card muted-card">
+            <div className="card-heading">
+              <span className="dot muted" />
+              Mainnet
+            </div>
+            <strong>{mainnetState.status}</strong>
+            <p>{networkConfigs.MAINNET.rpcUrl}</p>
+            <span className="pill">Disabled</span>
+          </article>
+        </div>
+      </section>
+
+      <section className="workspace-grid" aria-label="Workspace status">
+        <article className="workspace-card">
+          <p className="eyebrow">Operator</p>
+          <h3>Recurring templates</h3>
+          <p>
+            Create, pause, and materialize fixed-interval documentation cycles
+            after the reviewed contract is deployed.
+          </p>
+          <div className="empty-state">No registry configured</div>
+        </article>
+        <article className="workspace-card">
+          <p className="eyebrow">Contributor</p>
+          <h3>Claim and evidence</h3>
+          <p>
+            A claimant will submit a canonical GitHub pull request and commit
+            SHA. Recipient identity stays bound to the claimant.
+          </p>
+          <div className="empty-state">No active cycles</div>
+        </article>
+        <article className="workspace-card">
+          <p className="eyebrow">DAO reviewer</p>
+          <h3>Payment evidence</h3>
+          <p>
+            Proposal approval alone is not payment. The adapter verifies the
+            proposal and causal transfer receipt before showing PAID.
+          </p>
+          <div className="state-row">
+            <span>Verifier</span>
+            <strong>Fixture-tested</strong>
+          </div>
+        </article>
+      </section>
+
+      <section className="truth-panel" aria-labelledby="truth-heading">
+        <div>
+          <p className="eyebrow">Implemented today</p>
+          <h2 id="truth-heading">
+            Contract and verifier foundations are real. Live operations are not.
+          </h2>
         </div>
         <dl className="facts">
           <div>
-            <dt>Build stage</dt>
+            <dt>Contract methods</dt>
+            <dd>Locally verified</dd>
+          </div>
+          <div>
+            <dt>Live registry</dt>
+            <dd>Not deployed</dd>
+          </div>
+          <div>
+            <dt>Wallet signing</dt>
+            <dd>Disabled</dd>
+          </div>
+          <div>
+            <dt>Current stage</dt>
             <dd>{siteMetadata.stage}</dd>
-          </div>
-          <div>
-            <dt>Live data</dt>
-            <dd>{siteMetadata.liveData ? "Enabled" : "Not connected"}</dd>
-          </div>
-          <div>
-            <dt>Transactions</dt>
-            <dd>{siteMetadata.transactions ? "Enabled" : "Disabled"}</dd>
           </div>
         </dl>
       </section>
 
-      <section className="boundaries" aria-labelledby="boundaries-heading">
-        <p className="eyebrow" id="boundaries-heading">
-          Intended boundaries · not implemented
-        </p>
-        <div className="cards">
-          <article>
-            <span className="number">01</span>
-            <h3>Recurring care</h3>
-            <p>
-              Focus on public GitHub documentation maintenance, not a generic
-              work marketplace.
-            </p>
-          </article>
-          <article>
-            <span className="number">02</span>
-            <h3>Evidence before labels</h3>
-            <p>
-              Future work must verify exact onchain execution. A proposal
-              approval alone is not payment proof.
-            </p>
-          </article>
-          <article>
-            <span className="number">03</span>
-            <h3>Governance stays put</h3>
-            <p>
-              The existing Sputnik DAO keeps approval authority and custody.
-              CommonsOps does not hold treasury funds.
-            </p>
-          </article>
-        </div>
-      </section>
       <footer>
-        <span>CommonsOps · Foundation scaffold</span>
-        <span>No wallet. No live records. No transactions.</span>
+        <span>CommonsOps · Testnet-first workspace</span>
+        <span>No keys. No fabricated records. No transaction controls.</span>
       </footer>
     </main>
   );
