@@ -9,6 +9,7 @@ import {
   contributorRequestDetail,
   formatYoctoNearExact,
 } from "../features/contributor/contributor.ts";
+import { contributorPanelIds } from "./contributor-panel-ids.ts";
 
 interface ContributorPanelProps {
   readonly view: ContributorCycleView;
@@ -17,7 +18,7 @@ interface ContributorPanelProps {
   readonly evidencePreview: Evidence | null;
   readonly intents: readonly ContributorTransactionIntent[];
   readonly requestState: ContributorRequestState;
-  readonly headingId?: string;
+  readonly idScope: string;
   readonly headingLevel?: 2 | 3 | 4;
 }
 
@@ -62,9 +63,10 @@ export function ContributorPanel({
   evidencePreview,
   intents,
   requestState,
-  headingId = "contributor-heading",
+  idScope,
   headingLevel = 2,
 }: ContributorPanelProps) {
+  const ids = contributorPanelIds(idScope);
   const Heading = headingLevel === 2 ? "h2" : headingLevel === 3 ? "h3" : "h4";
   const Subheading =
     headingLevel === 2 ? "h3" : headingLevel === 3 ? "h4" : "h5";
@@ -73,10 +75,10 @@ export function ContributorPanel({
   const evidence = view.cycle.evidence ?? evidencePreview;
 
   return (
-    <section className="contributor-panel" aria-labelledby={headingId}>
+    <section className="contributor-panel" aria-labelledby={ids.heading}>
       <header>
         <p className="eyebrow">Contributor preview · Testnet</p>
-        <Heading id={headingId}>Cycle {cycleId}</Heading>
+        <Heading id={ids.heading}>Cycle {cycleId}</Heading>
         <p>{lifecycleMessage(view)}</p>
       </header>
 
@@ -126,8 +128,8 @@ export function ContributorPanel({
         </div>
       </dl>
 
-      <aside className="binding-notice" aria-labelledby="binding-heading">
-        <Subheading id="binding-heading">Recipient binding</Subheading>
+      <aside className="binding-notice" aria-labelledby={ids.bindingHeading}>
+        <Subheading id={ids.bindingHeading}>Recipient binding</Subheading>
         <p>
           Claimant and payout recipient are the same NEAR account. There is no
           recipient input. Release or expiry clears both before submission;
@@ -135,9 +137,9 @@ export function ContributorPanel({
         </p>
       </aside>
 
-      <fieldset disabled aria-describedby="evidence-disabled-reason">
+      <fieldset disabled aria-describedby={ids.evidenceReason}>
         <legend>Canonical GitHub evidence preview</legend>
-        <p id="evidence-disabled-reason">
+        <p id={ids.evidenceReason}>
           Presentational only: this module does not collect input, call GitHub,
           or submit a transaction.
         </p>
@@ -153,10 +155,15 @@ export function ContributorPanel({
           Pull request number
           <input value={evidenceDraft.pullRequestNumber} readOnly />
         </label>
-        <label>
-          Commit SHA
-          <input value={evidenceDraft.commitSha} readOnly />
-        </label>
+        <div className="evidence-static-value">
+          <span id={ids.commitShaLabel}>Commit SHA</span>
+          <output
+            className="exact-value commit-sha-value"
+            aria-labelledby={ids.commitShaLabel}
+          >
+            <code>{evidenceDraft.commitSha}</code>
+          </output>
+        </div>
       </fieldset>
 
       {evidence ? (
@@ -187,7 +194,7 @@ export function ContributorPanel({
         aria-label="Transaction intent previews"
       >
         {intents.map((intent) => {
-          const reasonId = `contributor-disabled-${intent.method}`;
+          const reasonId = ids.actionReasons[intent.method];
           return (
             <article className="intent-preview" key={intent.method}>
               <Subheading>{actionLabels[intent.method]}</Subheading>

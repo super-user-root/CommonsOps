@@ -696,13 +696,38 @@ fieldset > p {
   font-size: 0.82rem;
 }
 
-label {
+label,
+.evidence-static-value {
   display: grid;
   min-width: 0;
   gap: 6px;
   color: var(--ink-soft);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.evidence-static-value output {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 10px;
+  overflow: visible;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: #f6f5ef;
+  color: var(--ink);
+}
+
+.commit-sha-value code {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-all;
 }
 
 input {

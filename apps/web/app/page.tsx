@@ -241,7 +241,7 @@ export default async function HomePage() {
                 evidencePreview={journey.contributor.evidencePreview}
                 intents={journey.contributor.intents}
                 requestState={journey.contributor.requestState}
-                headingId="contributor-fixture-heading"
+                idScope="contributor-fixture"
                 headingLevel={4}
               />
             </div>

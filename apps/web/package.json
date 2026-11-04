@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "start": "next start --hostname 127.0.0.1",
-    "build": "next build",
-    "test": "node --test lib/*.test.ts src/features/**/*.test.ts",
+    "build": "next build && node --test lib/production-accessibility.test.mjs",
+    "test": "node --test lib/*.test.ts src/components/*.test.ts src/features/**/*.test.ts",
     "typecheck": "next typegen && tsc --project tsconfig.json && pnpm run test"
   },
   "dependencies": {
