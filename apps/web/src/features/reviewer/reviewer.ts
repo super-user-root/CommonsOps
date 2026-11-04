@@ -26,6 +26,10 @@ import { deriveContributorCycleView } from "../contributor/contributor.ts";
 export const MAX_PROPOSAL_DESCRIPTION_BYTES = 512;
 const MAX_FIXTURE_LABEL_BYTES = 200;
 const MAX_SAFE_PROPOSAL_ID = 9_007_199_254_740_991n;
+const MAX_REVIEWER_DATA_DEPTH = 64;
+const MAX_REVIEWER_DATA_NODES = 100_000;
+const MAX_REVIEWER_ARRAY_LENGTH = 100_000;
+const MAX_REVIEWER_STRING_BYTES = 512 * 1024;
 
 export type PinnedSputnikProfileInput = SputnikProfileInput;
 export type SputnikPolicySnapshot = ValidatedSputnikPolicySnapshot;
@@ -296,52 +300,103 @@ function ownDataSnapshotRequired(
   return Object.freeze(snapshot);
 }
 
-function assertDataTree(
-  value: unknown,
-  field: string,
-  seen = new Set<object>(),
-): void {
-  if (
-    value === null ||
-    ["string", "number", "boolean", "undefined"].includes(typeof value)
-  ) {
-    return;
-  }
-  if (typeof value !== "object") {
-    throw new Error(`${field}: data-only value required`);
-  }
-  if (seen.has(value)) throw new Error(`${field}: cyclic data is not allowed`);
-  seen.add(value);
-  const isArray = Array.isArray(value);
-  let prototype: object | null;
-  let descriptors: Record<PropertyKey, PropertyDescriptor>;
-  try {
-    prototype = Object.getPrototypeOf(value);
-    descriptors = Object.getOwnPropertyDescriptors(value);
-  } catch {
-    throw new Error(`${field}: inspectable plain data required`);
-  }
-  if (
-    (isArray && prototype !== Array.prototype) ||
-    (!isArray && prototype !== Object.prototype && prototype !== null)
-  ) {
-    throw new Error(`${field}: plain data required`);
-  }
-  for (const key of Reflect.ownKeys(descriptors)) {
-    if (key === "length" && isArray) continue;
-    const descriptor = descriptors[key];
-    if (
-      typeof key !== "string" ||
-      !descriptor?.enumerable ||
-      !("value" in descriptor)
-    ) {
-      throw new Error(
-        `${field}.${String(key)}: own enumerable data property required`,
-      );
+function assertDataTree(value: unknown, field: string): void {
+  const active = new Set<object>();
+  const stack: Array<
+    | {
+        readonly kind: "ENTER";
+        readonly value: unknown;
+        readonly depth: number;
+      }
+    | { readonly kind: "EXIT"; readonly value: object }
+  > = [{ kind: "ENTER", value, depth: 0 }];
+  let nodes = 0;
+
+  while (stack.length > 0) {
+    const entry = stack.pop();
+    if (!entry) break;
+    if (entry.kind === "EXIT") {
+      active.delete(entry.value);
+      continue;
     }
-    assertDataTree(descriptor.value, `${field}.${key}`, seen);
+    nodes += 1;
+    if (
+      nodes > MAX_REVIEWER_DATA_NODES ||
+      entry.depth > MAX_REVIEWER_DATA_DEPTH
+    ) {
+      throw new Error(`${field}: data depth or node limit exceeded`);
+    }
+    const current = entry.value;
+    if (
+      current === null ||
+      typeof current === "boolean" ||
+      typeof current === "undefined"
+    ) {
+      continue;
+    }
+    if (typeof current === "number") {
+      if (!Number.isFinite(current)) {
+        throw new Error(`${field}: finite data number required`);
+      }
+      continue;
+    }
+    if (typeof current === "string") {
+      if (
+        new TextEncoder().encode(current).length > MAX_REVIEWER_STRING_BYTES
+      ) {
+        throw new Error(`${field}: data string byte limit exceeded`);
+      }
+      continue;
+    }
+    if (typeof current !== "object") {
+      throw new Error(`${field}: data-only value required`);
+    }
+    if (active.has(current)) {
+      throw new Error(`${field}: cyclic data is not allowed`);
+    }
+    const isArray = Array.isArray(current);
+    let prototype: object | null;
+    let descriptors: Record<PropertyKey, PropertyDescriptor>;
+    try {
+      prototype = Object.getPrototypeOf(current);
+      descriptors = Object.getOwnPropertyDescriptors(current);
+    } catch {
+      throw new Error(`${field}: inspectable plain data required`);
+    }
+    if (
+      (isArray && prototype !== Array.prototype) ||
+      (!isArray && prototype !== Object.prototype && prototype !== null)
+    ) {
+      throw new Error(`${field}: plain data required`);
+    }
+    if (isArray && current.length > MAX_REVIEWER_ARRAY_LENGTH) {
+      throw new Error(`${field}: data array length limit exceeded`);
+    }
+    active.add(current);
+    stack.push({ kind: "EXIT", value: current });
+    const children: unknown[] = [];
+    for (const key of Reflect.ownKeys(descriptors)) {
+      if (key === "length" && isArray) continue;
+      const descriptor = descriptors[key];
+      if (
+        typeof key !== "string" ||
+        !descriptor?.enumerable ||
+        !("value" in descriptor)
+      ) {
+        throw new Error(
+          `${field}.${String(key)}: own enumerable data property required`,
+        );
+      }
+      children.push(descriptor.value);
+    }
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({
+        kind: "ENTER",
+        value: children[index],
+        depth: entry.depth + 1,
+      });
+    }
   }
-  seen.delete(value);
 }
 
 function cloneFixtureValue(value: unknown, field: string): unknown {

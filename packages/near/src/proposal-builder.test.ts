@@ -54,6 +54,30 @@ function rpcResult(
   };
 }
 
+function withOwnProto<T extends object>(
+  value: T,
+  protoValue: unknown,
+): T & { readonly __proto__: unknown } {
+  Object.defineProperty(value, "__proto__", {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: protoValue,
+  });
+  return value as T & { readonly __proto__: unknown };
+}
+
+async function expectPolicyQueryRejected(response: unknown): Promise<void> {
+  await assert.rejects(
+    querySputnikPolicy({
+      daoAccountId: dao,
+      profile,
+      transport: async () => response,
+    }),
+    /unexpected or missing fields/,
+  );
+}
+
 function fixturePolicy(
   overrides: Partial<Parameters<typeof parseSputnikPolicyFixture>[0]> = {},
 ) {
@@ -711,10 +735,134 @@ test("strict RPC parsing rejects inherited, accessor, extra and ambiguous data",
       transport: async () =>
         rpcResult(undefined, { result: Array.from(duplicate) }),
     }),
-    /duplicate JSON member proposal_bond/,
+    /duplicate JSON member/,
   );
 });
 
+test("rejects own __proto__ keys at every exact RPC object boundary", async () => {
+  const protoValues = [null, "primitive", { nested: true }];
+  for (const protoValue of protoValues) {
+    const envelope = withOwnProto(rpcResult(), protoValue);
+    await expectPolicyQueryRejected(envelope);
+
+    const result = withOwnProto(
+      structuredClone(rpcResult().result),
+      protoValue,
+    );
+    await expectPolicyQueryRejected({
+      jsonrpc: "2.0",
+      id: SPUTNIK_POLICY_RPC_ID,
+      result,
+    });
+
+    const error = withOwnProto(
+      { code: -1, message: "bounded error" },
+      protoValue,
+    );
+    await expectPolicyQueryRejected({
+      jsonrpc: "2.0",
+      id: SPUTNIK_POLICY_RPC_ID,
+      error,
+    });
+  }
+
+  const parsedEnvelope = JSON.parse(
+    `{"jsonrpc":"2.0","id":"${SPUTNIK_POLICY_RPC_ID}","result":${JSON.stringify(
+      rpcResult().result,
+    )},"__proto__":null}`,
+  );
+  await expectPolicyQueryRejected(parsedEnvelope);
+});
+
+test("rejects own __proto__ keys throughout unsupported proposal boundaries", () => {
+  const unsupportedProfile = { version: "9.9.9", codeHash: "unsupported" };
+  const policy = parseSputnikPolicyFixtureWithoutBlock({
+    network: "TESTNET",
+    daoAccountId: dao,
+    profile: unsupportedProfile,
+    proposalBondYocto: "0",
+    provenanceLabel: "special-key fixture",
+  });
+  const source = buildNativeTransferProposalPreview({
+    network: "TESTNET",
+    daoAccountId: dao,
+    claimantId: recipient,
+    recipientId: recipient,
+    amountYocto: "2",
+    cycle,
+  });
+  for (const protoValue of [null, 7, { nested: true }]) {
+    const proposalExtra = withOwnProto(structuredClone(source), protoValue);
+    assert.throws(
+      () =>
+        buildUnavailableAddProposalPreview({
+          network: "TESTNET",
+          daoAccountId: dao,
+          profile: unsupportedProfile,
+          policy,
+          proposal: proposalExtra,
+        }),
+      /unexpected or missing fields/,
+    );
+
+    const kindExtra = withOwnProto(structuredClone(source.kind), protoValue);
+    assert.throws(
+      () =>
+        buildUnavailableAddProposalPreview({
+          network: "TESTNET",
+          daoAccountId: dao,
+          profile: unsupportedProfile,
+          policy,
+          proposal: { ...source, kind: kindExtra },
+        }),
+      /unexpected or missing fields/,
+    );
+
+    const transferExtra = withOwnProto(
+      structuredClone(source.kind.Transfer),
+      protoValue,
+    );
+    assert.throws(
+      () =>
+        buildUnavailableAddProposalPreview({
+          network: "TESTNET",
+          daoAccountId: dao,
+          profile: unsupportedProfile,
+          policy,
+          proposal: {
+            ...source,
+            kind: { Transfer: transferExtra },
+          },
+        }),
+      /unexpected or missing fields/,
+    );
+  }
+});
+
+test("duplicate scanner emits a bounded constant error without raw key leakage", async () => {
+  const attackerKey = `${"x".repeat(100_000)}\u0001secret`;
+  const encodedKey = JSON.stringify(attackerKey);
+  const policyText = `{${encodedKey}:1,${encodedKey}:2,"proposal_bond":"1"}`;
+  const encodedPolicy = Buffer.from(policyText, "utf8").toString("base64");
+  let caught: Error | null = null;
+  try {
+    await querySputnikPolicy({
+      daoAccountId: dao,
+      profile,
+      transport: async () =>
+        rpcResult(undefined, {
+          result: encodedPolicy,
+        }),
+    });
+  } catch (error) {
+    caught = error as Error;
+  }
+  assert(caught);
+  assert.equal(caught.message, "policy result: duplicate JSON member");
+  assert(new TextEncoder().encode(caught.message).length <= 256);
+  assert.equal(caught.message.includes("secret"), false);
+  assert.equal(caught.message.includes("x".repeat(100)), false);
+});
 test("bounds base64 before parsing and bounds JSON-RPC error text/data", async () => {
   const maxEncoded = "A".repeat(4 * Math.ceil((256 * 1024) / 3));
   const tooLarge = `${maxEncoded}AAAA`;

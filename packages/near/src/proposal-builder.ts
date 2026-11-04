@@ -409,18 +409,23 @@ function cloneJsonNode(
   if (keys.some((key) => typeof key !== "string")) {
     throw new Error(`${field}: symbol properties are not allowed`);
   }
-  const clone: Record<string, unknown> = {};
+  const clone = Object.create(null) as Record<string, unknown>;
   for (const key of keys as string[]) {
     const descriptor = own[key];
     if (!descriptor?.enumerable || !("value" in descriptor)) {
       throw new Error(`${field}.${key}: own enumerable data property required`);
     }
-    clone[key] = cloneJsonNode(
-      descriptor.value,
-      `${field}.${key}`,
-      state,
-      depth + 1,
-    );
+    Object.defineProperty(clone, key, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: cloneJsonNode(
+        descriptor.value,
+        `${field}.${key}`,
+        state,
+        depth + 1,
+      ),
+    });
   }
   state.seen.delete(value);
   return clone;
@@ -716,7 +721,7 @@ function scanJsonValue(
     while (position.index < text.length) {
       const key = scanJsonString(text, position);
       if (keys.has(key))
-        throw new Error(`policy result: duplicate JSON member ${key}`);
+        throw new Error("policy result: duplicate JSON member");
       keys.add(key);
       skipWhitespace(text, position);
       if (text[position.index] !== ":")

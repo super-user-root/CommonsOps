@@ -120,6 +120,25 @@ async function fixture(name: string) {
   return JSON.parse(await readFile(path.join(fixtures, name), "utf8"));
 }
 
+function nestedObject(depth: number): Record<string, unknown> {
+  const root: Record<string, unknown> = {};
+  let cursor = root;
+  for (let index = 0; index < depth; index += 1) {
+    const next: Record<string, unknown> = {};
+    cursor.child = next;
+    cursor = next;
+  }
+  return root;
+}
+
+function pendingData(proposalValue: unknown): ReviewerObservation {
+  return {
+    kind: "PENDING",
+    fixtureLabel: "bounded data fixture",
+    proposal: proposalValue,
+  };
+}
+
 function pending(
   proposalRecord: unknown,
   label = "explicit reviewer fixture",
@@ -130,6 +149,73 @@ function pending(
     proposal: proposalRecord,
   };
 }
+
+test("bounds reviewer data depth with controlled errors and no RangeError", async () => {
+  const maximum = nestedObject(64);
+  const accepted = await deriveReviewerPaymentState(
+    submittedCycle("63"),
+    profile,
+    null,
+    pendingData(maximum),
+  );
+  assert.equal(accepted.state, "UNKNOWN");
+
+  const excessive = nestedObject(65);
+  await assert.rejects(
+    deriveReviewerPaymentState(
+      submittedCycle("63"),
+      profile,
+      null,
+      pendingData(excessive),
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      !(error instanceof RangeError) &&
+      /depth or node limit/.test(error.message),
+  );
+});
+
+test("bounds reviewer data nodes, strings and arrays with controlled errors", async () => {
+  const nearNodeLimit = Object.fromEntries(
+    Array.from({ length: 99_995 }, (_, index) => [`n${index}`, null]),
+  );
+  const accepted = await deriveReviewerPaymentState(
+    submittedCycle("63"),
+    profile,
+    null,
+    pendingData(nearNodeLimit),
+  );
+  assert.equal(accepted.state, "UNKNOWN");
+
+  const overNodeLimit = Object.fromEntries(
+    Array.from({ length: 100_001 }, (_, index) => [`n${index}`, null]),
+  );
+  const overStringLimit = {
+    value: "x".repeat(512 * 1024 + 1),
+  };
+  const overArrayLimit = {
+    value: new Array(100_001).fill(null),
+  };
+  const cases: readonly [unknown, RegExp][] = [
+    [overNodeLimit, /depth or node limit/],
+    [overStringLimit, /string byte limit/],
+    [overArrayLimit, /array length limit/],
+  ];
+  for (const [value, pattern] of cases) {
+    await assert.rejects(
+      deriveReviewerPaymentState(
+        submittedCycle("63"),
+        profile,
+        null,
+        pendingData(value),
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        !(error instanceof RangeError) &&
+        pattern.test(error.message),
+    );
+  }
+});
 
 test("rejects accessor, inherited and proxy reviewer boundaries without repeated reads", async () => {
   let profileReads = 0;
