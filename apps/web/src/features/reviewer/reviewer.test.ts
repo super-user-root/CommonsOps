@@ -6,6 +6,7 @@ import type { Cycle } from "@commonsops/domain";
 import {
   buildReviewerModel,
   deriveReviewerPaymentState,
+  reviewerFixturePolicySnapshot,
   reviewerRequestDetail,
   type ReviewerModelInput,
   type ReviewerObservation,
@@ -22,6 +23,16 @@ const profile = {
   version: "2.0.0",
   codeHash: "ZGdM2TFdQpcXrxPxvq25514EViyi9xBSboetDiB3Uiq",
 };
+const fixturePolicy = reviewerFixturePolicySnapshot({
+  network: "TESTNET",
+  daoAccountId: dao,
+  profile,
+  proposalBondYocto: bond,
+  blockHash: "BL6QvZoH6WCmbAuAaiQUyhafeSmAsMar5NZxquHzyxvD",
+  blockHeight: "94689099",
+  provenanceLabel:
+    "P0-T01 get_policy fixture at final block 94689099; not queried live",
+});
 const fixtures = path.resolve(
   import.meta.dirname,
   "../../../../../tests/fixtures/sputnik",
@@ -96,9 +107,10 @@ function input(
   return {
     cycle: submittedCycle(),
     profile,
-    policy: { proposal_bond: bond },
+    policy: fixturePolicy,
     reviewedRegistryAccountId: "registry.testnet",
     proposalIdForLink: "63",
+    addProposalGas: null,
     observation: { kind: "ABSENT" },
     ...overrides,
   };
@@ -106,6 +118,25 @@ function input(
 
 async function fixture(name: string) {
   return JSON.parse(await readFile(path.join(fixtures, name), "utf8"));
+}
+
+function nestedObject(depth: number): Record<string, unknown> {
+  const root: Record<string, unknown> = {};
+  let cursor = root;
+  for (let index = 0; index < depth; index += 1) {
+    const next: Record<string, unknown> = {};
+    cursor.child = next;
+    cursor = next;
+  }
+  return root;
+}
+
+function pendingData(proposalValue: unknown): ReviewerObservation {
+  return {
+    kind: "PENDING",
+    fixtureLabel: "bounded data fixture",
+    proposal: proposalValue,
+  };
 }
 
 function pending(
@@ -118,6 +149,163 @@ function pending(
     proposal: proposalRecord,
   };
 }
+
+test("bounds reviewer data depth with controlled errors and no RangeError", async () => {
+  const maximum = nestedObject(64);
+  const accepted = await deriveReviewerPaymentState(
+    submittedCycle("63"),
+    profile,
+    null,
+    pendingData(maximum),
+  );
+  assert.equal(accepted.state, "UNKNOWN");
+
+  const excessive = nestedObject(65);
+  await assert.rejects(
+    deriveReviewerPaymentState(
+      submittedCycle("63"),
+      profile,
+      null,
+      pendingData(excessive),
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      !(error instanceof RangeError) &&
+      /depth or node limit/.test(error.message),
+  );
+});
+
+test("bounds reviewer data nodes, strings and arrays with controlled errors", async () => {
+  const nearNodeLimit = Object.fromEntries(
+    Array.from({ length: 99_995 }, (_, index) => [`n${index}`, null]),
+  );
+  const accepted = await deriveReviewerPaymentState(
+    submittedCycle("63"),
+    profile,
+    null,
+    pendingData(nearNodeLimit),
+  );
+  assert.equal(accepted.state, "UNKNOWN");
+
+  const overNodeLimit = Object.fromEntries(
+    Array.from({ length: 100_001 }, (_, index) => [`n${index}`, null]),
+  );
+  const overStringLimit = {
+    value: "x".repeat(512 * 1024 + 1),
+  };
+  const overArrayLimit = {
+    value: new Array(100_001).fill(null),
+  };
+  const cases: readonly [unknown, RegExp][] = [
+    [overNodeLimit, /depth or node limit/],
+    [overStringLimit, /string byte limit/],
+    [overArrayLimit, /array length limit/],
+  ];
+  for (const [value, pattern] of cases) {
+    await assert.rejects(
+      deriveReviewerPaymentState(
+        submittedCycle("63"),
+        profile,
+        null,
+        pendingData(value),
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        !(error instanceof RangeError) &&
+        pattern.test(error.message),
+    );
+  }
+});
+
+test("rejects accessor, inherited and proxy reviewer boundaries without repeated reads", async () => {
+  let profileReads = 0;
+  const profileAccessor = Object.defineProperties(
+    {},
+    {
+      version: {
+        enumerable: true,
+        get() {
+          profileReads += 1;
+          return profile.version;
+        },
+      },
+      codeHash: { enumerable: true, value: profile.codeHash },
+    },
+  );
+  await assert.rejects(
+    buildReviewerModel(input({ profile: profileAccessor as typeof profile })),
+    /data property/,
+  );
+  assert.equal(profileReads, 0);
+
+  const cycleAccessor = Object.defineProperties(
+    {},
+    {
+      ...Object.fromEntries(
+        Object.entries(submittedCycle()).map(([key, value]) => [
+          key,
+          { enumerable: true, value },
+        ]),
+      ),
+      amount_yocto: {
+        enumerable: true,
+        get() {
+          return amount63;
+        },
+      },
+    },
+  );
+  await assert.rejects(
+    buildReviewerModel(input({ cycle: cycleAccessor as Cycle })),
+    /structured clone|data property|plain object/,
+  );
+
+  const inheritedPolicy = Object.create({ proposal_bond: bond });
+  await assert.rejects(
+    buildReviewerModel(input({ policy: inheritedPolicy })),
+    /plain object|fields/,
+  );
+
+  const accessorObservation = Object.defineProperties(
+    {},
+    {
+      kind: { enumerable: true, value: "PENDING" },
+      fixtureLabel: {
+        enumerable: true,
+        get() {
+          return "accessor";
+        },
+      },
+      proposal: { enumerable: true, value: null },
+    },
+  );
+  await assert.rejects(
+    deriveReviewerPaymentState(
+      submittedCycle("63"),
+      profile,
+      null,
+      accessorObservation as ReviewerObservation,
+    ),
+    /data property/,
+  );
+});
+
+test("captures reviewer input once and resists immediate caller mutation", async () => {
+  const supplied = submittedCycle();
+  const observation = pending(null, "call-time fixture label");
+  const modelPromise = buildReviewerModel(
+    input({ cycle: supplied, observation, proposalIdForLink: null }),
+  );
+  Object.assign(supplied.claim!, { payout_recipient_id: "mallory.testnet" });
+  Object.assign(observation, { fixtureLabel: "mutated", proposal: proposal() });
+  const model = await modelPromise;
+  assert.equal(model.cycle.claim?.payout_recipient_id, recipient);
+  assert.equal(
+    model.fixtureNotice,
+    "Fixture-derived pending input: call-time fixture label",
+  );
+  assert.equal(model.payment.state, "NOT_LINKED");
+});
 
 test("builds the exact native Transfer and unsigned add_proposal preview", async () => {
   const model = await buildReviewerModel(input());
@@ -132,18 +320,46 @@ test("builds the exact native Transfer and unsigned add_proposal preview", async
       },
     },
   });
-  assert.deepEqual(model.addProposalIntent, {
-    receiverId: dao,
-    method: "add_proposal",
-    args: { proposal: model.proposal },
-    attachedDepositYocto: bond,
-    network: "TESTNET",
-    signingEnabled: false,
-    disabledReason:
-      "Unsigned preview only: no wallet connector is configured, this is not executable or authorized, and P3-T02 owns live transaction construction and signing.",
-  });
+  assert.equal(model.addProposalIntent.receiverId, dao);
+  assert.equal(model.addProposalIntent.method, "add_proposal");
+  assert.deepEqual(model.addProposalIntent.args, { proposal: model.proposal });
+  assert.equal(model.addProposalIntent.attachedDepositYocto, bond);
+  assert.equal(model.addProposalIntent.gas, null);
+  assert.equal(model.addProposalIntent.gasParameter.status, "REQUIRED");
+  assert.equal(
+    model.addProposalIntent.authorization.required,
+    "WALLET_OR_FULL_ACCESS_KEY",
+  );
+  assert.equal(
+    model.addProposalIntent.authorization.functionCallKeyProtocolCompatible,
+    false,
+  );
+  assert.equal(
+    model.addProposalIntent.authorization.functionCallKeyIntegrationSupported,
+    false,
+  );
+  assert.equal(
+    model.addProposalIntent.authorization.functionCallKeyCanAttachNear,
+    false,
+  );
+  assert.equal(
+    model.addProposalIntent.authorization.allowanceControlsAssetSpending,
+    false,
+  );
+  assert.equal(model.addProposalIntent.network, "TESTNET");
+  assert.equal(model.addProposalIntent.signingEnabled, false);
+  assert.equal(model.addProposalIntent.executable, false);
+  assert.match(model.addProposalIntent.disabledReason, /fixture-only/);
+  assert.match(
+    model.addProposalIntent.disabledReason,
+    /unsigned and non-executable/,
+  );
+  assert.equal(model.addProposalIntent.policySnapshot.block.height, "94689099");
   assert.equal("paid" in model, false);
   assert.equal("sign" in model.addProposalIntent, false);
+  assert.equal("send" in model.addProposalIntent, false);
+  assert.equal("nonce" in model.addProposalIntent, false);
+  assert.equal("signature" in model.addProposalIntent, false);
 });
 
 test("freezes the accepted cycle snapshot against later caller mutation", async () => {
@@ -192,7 +408,7 @@ test("builds exact zero-deposit link_proposal ABI only for a positive U64 ID", a
     network: "TESTNET",
     signingEnabled: false,
     disabledReason:
-      "Unsigned preview only: no wallet connector is configured, this is not executable or authorized, and P3-T02 owns live transaction construction and signing.",
+      "Unsigned preview only: no wallet connector is configured, this is not executable or authorized.",
   });
 
   const absent = await buildReviewerModel(input({ proposalIdForLink: null }));
@@ -211,19 +427,49 @@ test("builds exact zero-deposit link_proposal ABI only for a positive U64 ID", a
   assert.equal(maximum.link.intent?.args.proposal_id, U64_MAX);
 });
 
-test("accepts exact zero, positive, and maximum policy bond and rejects malformed u128", async () => {
+test("accepts exact zero, positive, and maximum validated policy bond", async () => {
   for (const value of ["0", "1", U128_MAX]) {
-    const model = await buildReviewerModel(
-      input({ policy: { proposal_bond: value } }),
-    );
+    const policy = reviewerFixturePolicySnapshot({
+      network: "TESTNET",
+      daoAccountId: dao,
+      profile,
+      proposalBondYocto: value,
+      blockHash: "BL6QvZoH6WCmbAuAaiQUyhafeSmAsMar5NZxquHzyxvD",
+      blockHeight: "94689099",
+      provenanceLabel: "focused policy fixture; not queried live",
+    });
+    const model = await buildReviewerModel(input({ policy }));
     assert.equal(model.addProposalIntent.attachedDepositYocto, value);
   }
   for (const invalid of ["00", "01", "-1", "1.5", `${U128_MAX}0`]) {
-    await assert.rejects(
-      buildReviewerModel(input({ policy: { proposal_bond: invalid } })),
-      /policy.proposal_bond/,
+    assert.throws(
+      () =>
+        reviewerFixturePolicySnapshot({
+          network: "TESTNET",
+          daoAccountId: dao,
+          profile,
+          proposalBondYocto: invalid,
+          blockHash: "BL6QvZoH6WCmbAuAaiQUyhafeSmAsMar5NZxquHzyxvD",
+          blockHeight: "94689099",
+          provenanceLabel: "invalid focused fixture",
+        }),
+      /proposalBondYocto/,
     );
   }
+  const legacy = await buildReviewerModel(
+    input({
+      policy: { proposal_bond: bond },
+    }),
+  );
+  assert.equal(legacy.addProposalIntent.attachedDepositYocto, bond);
+  assert.deepEqual(legacy.policy.block, {
+    availability: "UNAVAILABLE",
+    finality: null,
+    hash: null,
+    height: null,
+  });
+  assert.equal(legacy.policy.source.kind, "FIXTURE_UNAVAILABLE_PROVENANCE");
+  assert.match(legacy.policy.source.label, /Legacy fixture-only/);
 });
 
 test("fails closed on noncanonical cycle values and immutable recipient or evidence changes", async () => {
@@ -448,7 +694,7 @@ test("build model uses one call-time profile snapshot everywhere", async () => {
   );
   assert.match(
     unsupportedModel.addProposalIntent.disabledReason,
-    /profile\/code hash is unsupported/,
+    /policy snapshot does not match.*profile\/code hash/,
   );
 
   const supportedAtCall = { ...profile };
