@@ -82,6 +82,7 @@ export type ReviewerPaymentState =
 export interface ReviewerPaymentDisplay {
   readonly state: ReviewerPaymentState;
   readonly reason: string;
+  readonly conflictReason: string | null;
   readonly proposalStatus: string | null;
   readonly adapterState: PaymentState | null;
   readonly transactionHash: string | null;
@@ -129,6 +130,28 @@ export interface ReviewerModel {
   readonly fixtureNotice: string;
 }
 
+interface ValidatedAbsentObservation {
+  readonly kind: "ABSENT";
+}
+
+interface ValidatedPendingObservation {
+  readonly kind: "PENDING";
+  readonly fixtureLabel: string;
+  readonly proposal: Readonly<Record<string, unknown>> | null;
+}
+
+interface ValidatedFixtureObservation {
+  readonly kind: "FIXTURE";
+  readonly fixtureLabel: string;
+  readonly proposal: unknown;
+  readonly receiptResponse: unknown;
+}
+
+type ValidatedReviewerObservation =
+  | ValidatedAbsentObservation
+  | ValidatedPendingObservation
+  | ValidatedFixtureObservation;
+
 interface CompleteProposal {
   readonly id: number;
   readonly status: string;
@@ -174,7 +197,102 @@ function boundedLabel(value: string, field: string): string {
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const keys = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return (
+    keys.length === sortedExpected.length &&
+    keys.every((key, index) => key === sortedExpected[index])
+  );
+}
+
+function cloneFixtureValue(value: unknown, field: string): unknown {
+  try {
+    return structuredClone(value);
+  } catch {
+    throw new Error(`${field}: structured clone required`);
+  }
+}
+
+function validateObservation(value: unknown): ValidatedReviewerObservation {
+  if (!isObject(value) || typeof value.kind !== "string") {
+    throw new Error("observation: exact discriminated object required");
+  }
+  switch (value.kind) {
+    case "ABSENT":
+      if (!hasExactKeys(value, ["kind"])) {
+        throw new Error("observation.ABSENT: unexpected or missing fields");
+      }
+      return Object.freeze({ kind: "ABSENT" as const });
+    case "PENDING": {
+      if (!hasExactKeys(value, ["kind", "fixtureLabel", "proposal"])) {
+        throw new Error("observation.PENDING: unexpected or missing fields");
+      }
+      if (typeof value.fixtureLabel !== "string") {
+        throw new Error("observation.PENDING.fixtureLabel: string required");
+      }
+      const fixtureLabel = boundedLabel(
+        value.fixtureLabel,
+        "observation.PENDING.fixtureLabel",
+      );
+      if (value.proposal !== null && !isObject(value.proposal)) {
+        throw new Error(
+          "observation.PENDING.proposal: object or null required",
+        );
+      }
+      const proposal =
+        value.proposal === null
+          ? null
+          : (cloneFixtureValue(
+              value.proposal,
+              "observation.PENDING.proposal",
+            ) as Record<string, unknown>);
+      return Object.freeze({
+        kind: "PENDING" as const,
+        fixtureLabel,
+        proposal: proposal ? Object.freeze(proposal) : null,
+      });
+    }
+    case "FIXTURE": {
+      if (
+        !hasExactKeys(value, [
+          "kind",
+          "fixtureLabel",
+          "proposal",
+          "receiptResponse",
+        ])
+      ) {
+        throw new Error("observation.FIXTURE: unexpected or missing fields");
+      }
+      if (typeof value.fixtureLabel !== "string") {
+        throw new Error("observation.FIXTURE.fixtureLabel: string required");
+      }
+      const fixtureLabel = boundedLabel(
+        value.fixtureLabel,
+        "observation.FIXTURE.fixtureLabel",
+      );
+      return Object.freeze({
+        kind: "FIXTURE" as const,
+        fixtureLabel,
+        proposal: cloneFixtureValue(
+          value.proposal,
+          "observation.FIXTURE.proposal",
+        ),
+        receiptResponse: cloneFixtureValue(
+          value.receiptResponse,
+          "observation.FIXTURE.receiptResponse",
+        ),
+      });
+    }
+    default:
+      throw new Error("observation.kind: unsupported value");
+  }
 }
 
 function profileSupported(profile: PinnedSputnikProfileInput): boolean {
@@ -312,24 +430,15 @@ function addProposalIntent(
 function linkPreview(
   cycle: Cycle,
   reviewedRegistryAccountId: string | null,
-  proposalIdForLink: string | null,
+  proposalIdForLink: unknown,
   supported: boolean,
 ): ProposalLinkPreview {
   if (reviewedRegistryAccountId !== null) {
     accountId(reviewedRegistryAccountId, "reviewedRegistryAccountId");
   }
-  const candidate =
-    proposalIdForLink === null
-      ? null
-      : (canonicalDecimal(proposalIdForLink, "proposalIdForLink", 64, true),
-        proposalIdForLink);
-
   if (cycle.proposal_link) {
-    const replacement =
-      candidate !== null && candidate !== cycle.proposal_link.key.proposal_id
-        ? " A replacement candidate was ignored."
-        : "";
-    const reason = `The registry proposal link is immutable and globally one-time; replacement and replay are not allowed.${replacement}`;
+    const reason =
+      "The registry proposal link is immutable and globally one-time; replacement and replay are not allowed. The supplied replacement candidate was ignored without parsing.";
     return Object.freeze({
       status: "LINKED_IMMUTABLE" as const,
       proposalId: cycle.proposal_link.key.proposal_id,
@@ -338,6 +447,16 @@ function linkPreview(
       reason,
     });
   }
+
+  const candidate =
+    proposalIdForLink === null
+      ? null
+      : typeof proposalIdForLink === "string"
+        ? (canonicalDecimal(proposalIdForLink, "proposalIdForLink", 64, true),
+          proposalIdForLink)
+        : (() => {
+            throw new Error("proposalIdForLink: string or null required");
+          })();
 
   if (candidate === null) {
     return Object.freeze({
@@ -380,6 +499,7 @@ function display(
   return Object.freeze({
     state,
     reason,
+    conflictReason: null,
     proposalStatus,
     adapterState: null,
     transactionHash: null,
@@ -393,10 +513,13 @@ function display(
 function adapterDisplay(
   verified: VerifiedPayment,
   proposalStatus: string,
+  state: ReviewerPaymentState = verified.state,
+  conflictReason: string | null = null,
 ): ReviewerPaymentDisplay {
   return Object.freeze({
-    state: verified.state,
+    state,
     reason: verified.reason,
+    conflictReason,
     proposalStatus,
     adapterState: verified.state,
     transactionHash: verified.transactionHash,
@@ -458,14 +581,15 @@ function proposalMatchesCycle(
   );
 }
 
-function fixtureNotice(observation: ReviewerObservation): string {
-  if (observation.kind === "ABSENT") {
-    return "No proposal or receipt fixture was supplied; absence is explicit.";
+function fixtureNotice(observation: ValidatedReviewerObservation): string {
+  switch (observation.kind) {
+    case "ABSENT":
+      return "No proposal or receipt fixture was supplied; absence is explicit.";
+    case "PENDING":
+      return `Fixture-derived pending input: ${observation.fixtureLabel}`;
+    case "FIXTURE":
+      return `Fixture-derived proposal and receipt input: ${observation.fixtureLabel}`;
   }
-  const label = boundedLabel(observation.fixtureLabel, "fixtureLabel");
-  return observation.kind === "PENDING"
-    ? `Fixture-derived pending input: ${label}`
-    : `Fixture-derived proposal and receipt input: ${label}`;
 }
 
 function expectedPayment(
@@ -491,7 +615,7 @@ function derivePaymentFromSnapshot(
   cycle: Cycle,
   profile: PinnedSputnikProfileInput,
   proposalIdForLink: string | null,
-  observation: ReviewerObservation,
+  observation: ValidatedReviewerObservation,
 ): ReviewerPaymentDisplay {
   const linked = cycle.proposal_link;
   if (!linked) {
@@ -504,6 +628,10 @@ function derivePaymentFromSnapshot(
           "PREPARED",
           "A proposal/link preview is prepared, but no immutable registry link exists and no payment can be attributed.",
         );
+  }
+
+  if (!profileSupported(profile)) {
+    return display("UNKNOWN", "Unsupported Sputnik deployment profile");
   }
 
   if (observation.kind === "ABSENT") {
@@ -535,13 +663,6 @@ function derivePaymentFromSnapshot(
   }
 
   if (observation.kind === "PENDING") {
-    if (!profileSupported(profile)) {
-      return display(
-        "UNKNOWN",
-        "Unsupported Sputnik deployment profile",
-        complete.status,
-      );
-    }
     if (!proposalMatchesCycle(complete, cycle)) {
       return display(
         "INVALID",
@@ -590,10 +711,11 @@ function derivePaymentFromSnapshot(
     observation.receiptResponse,
   );
   if (verified.state === "PAID" && complete.status !== "Approved") {
-    return display(
+    return adapterDisplay(
+      verified,
+      complete.status,
       "INVALID",
       "Verified payout evidence conflicts with the supplied proposal status.",
-      complete.status,
     );
   }
   return adapterDisplay(verified, complete.status);
@@ -605,22 +727,27 @@ export async function deriveReviewerPaymentState(
   proposalIdForLink: string | null,
   observation: ReviewerObservation,
 ): Promise<ReviewerPaymentDisplay> {
+  const validatedObservation = validateObservation(observation);
   const snapshot = await submittedCycleSnapshot(cycle);
-  if (proposalIdForLink !== null) {
+  if (snapshot.proposal_link === null && proposalIdForLink !== null) {
+    if (typeof proposalIdForLink !== "string") {
+      throw new Error("proposalIdForLink: string or null required");
+    }
     canonicalDecimal(proposalIdForLink, "proposalIdForLink", 64, true);
   }
-  fixtureNotice(observation);
+  fixtureNotice(validatedObservation);
   return derivePaymentFromSnapshot(
     snapshot,
     profile,
     proposalIdForLink,
-    observation,
+    validatedObservation,
   );
 }
 
 export async function buildReviewerModel(
   input: ReviewerModelInput,
 ): Promise<ReviewerModel> {
+  const observation = validateObservation(input.observation);
   const cycle = await submittedCycleSnapshot(input.cycle);
   const supported = profileSupported(input.profile);
   if (!input.profile.version || !input.profile.codeHash) {
@@ -635,12 +762,12 @@ export async function buildReviewerModel(
     input.proposalIdForLink,
     supported,
   );
-  const notice = fixtureNotice(input.observation);
+  const notice = fixtureNotice(observation);
   const payment = derivePaymentFromSnapshot(
     cycle,
     input.profile,
     input.proposalIdForLink,
-    input.observation,
+    observation,
   );
   return Object.freeze({
     cycle,

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type {
   ReviewerModel,
   ReviewerRequestState,
@@ -79,8 +80,10 @@ export function ReviewerPanel({
   requestState,
   idScope,
 }: ReviewerPanelProps) {
+  const instanceId = safeId(useId());
   const cycleId = `${model.cycle.key.template_id}:${model.cycle.key.period_index}`;
-  const scope = safeId(idScope ?? `reviewer-${cycleId}`);
+  const readableScope = safeId(idScope ?? `reviewer-${cycleId}`);
+  const scope = `${readableScope}-${instanceId}`;
   const headingId = `${scope}-heading`;
   const trustId = `${scope}-trust`;
   const requestId = `${scope}-request`;
@@ -234,9 +237,15 @@ export function ReviewerPanel({
             <dd>{payment.state}</dd>
           </div>
           <div>
-            <dt>Reason</dt>
+            <dt>Adapter reason</dt>
             <dd>{payment.reason}</dd>
           </div>
+          {payment.conflictReason ? (
+            <div>
+              <dt>Conflict reason</dt>
+              <dd>{payment.conflictReason}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Proposal status</dt>
             <dd>{payment.proposalStatus ?? "Not available"}</dd>

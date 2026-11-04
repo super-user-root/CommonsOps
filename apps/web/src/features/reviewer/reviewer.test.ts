@@ -279,18 +279,65 @@ test("fails closed on noncanonical cycle values and immutable recipient or evide
   );
 });
 
-test("makes an existing proposal link immutable and refuses replacement preview", async () => {
-  const model = await buildReviewerModel(
-    input({
-      cycle: submittedCycle("63"),
-      proposalIdForLink: "64",
-    }),
-  );
-  assert.equal(model.link.status, "LINKED_IMMUTABLE");
-  assert.equal(model.link.proposalId, "63");
-  assert.equal(model.link.intent, null);
-  assert.match(model.link.reason, /replacement and replay are not allowed/);
-  assert.match(model.link.reason, /replacement candidate was ignored/);
+test("existing immutable link ignores every supplied replacement without parsing", async () => {
+  for (const candidate of [
+    null,
+    "63",
+    "64",
+    "0",
+    "01",
+    "malformed",
+    `${U64_MAX}0`,
+    63 as unknown as string,
+    { injected: true } as unknown as string,
+  ]) {
+    const model = await buildReviewerModel(
+      input({
+        cycle: submittedCycle("63"),
+        proposalIdForLink: candidate,
+      }),
+    );
+    assert.equal(model.link.status, "LINKED_IMMUTABLE");
+    assert.equal(model.link.proposalId, "63");
+    assert.equal(model.link.intent, null);
+    assert.match(model.link.reason, /replacement and replay are not allowed/);
+    assert.match(model.link.reason, /candidate was ignored without parsing/);
+  }
+});
+
+test("unsupported profile is UNKNOWN before every linked observation mapping", async () => {
+  const paid = await fixture("proposal-63-paid.json");
+  const observations: readonly ReviewerObservation[] = [
+    pending(null, "pending null"),
+    pending(proposal(63, "InProgress"), "pending governance"),
+    pending(proposal(), "approved without receipts"),
+    pending(proposal(63, "Rejected"), "rejected without receipts"),
+    pending({ id: 63, status: "Approved" }, "malformed proposal"),
+    {
+      kind: "FIXTURE",
+      fixtureLabel: "authentic paid fixture",
+      proposal: proposal(),
+      receiptResponse: paid,
+    },
+  ];
+  for (const unsupported of [
+    { version: "9.9.9", codeHash: profile.codeHash },
+    { version: profile.version, codeHash: "unsupported" },
+  ]) {
+    for (const observation of observations) {
+      const result = await deriveReviewerPaymentState(
+        submittedCycle("63"),
+        unsupported,
+        null,
+        observation,
+      );
+      assert.equal(result.state, "UNKNOWN");
+      assert.equal(result.adapterState, null);
+      assert.equal(result.proposalStatus, null);
+      assert.match(result.reason, /Unsupported Sputnik deployment profile/);
+      assert.equal(result.transactionHash, null);
+    }
+  }
 });
 
 test("maps absent, prepared, governance, approved-only and rejected proposal states truthfully", async () => {
@@ -366,6 +413,7 @@ test("derives PAID with full provenance only from the authentic causal receipt g
   assert.deepEqual(result, {
     state: "PAID",
     reason: "Verified one successful causal native NEAR payout",
+    conflictReason: null,
     proposalStatus: "Approved",
     adapterState: "PAID",
     transactionHash: "2Nk6t5MJJ6uRUrpoNcY7Hhuaupw9do7ybvxpxZYYS1Dm",
@@ -452,7 +500,35 @@ test("preserves adapter UNKNOWN, INVALID and AMBIGUOUS as distinct states", asyn
     },
   );
   assert.equal(paidWithRejectedStatus.state, "INVALID");
-  assert.match(paidWithRejectedStatus.reason, /conflicts/);
+  assert.equal(paidWithRejectedStatus.adapterState, "PAID");
+  assert.equal(
+    paidWithRejectedStatus.reason,
+    "Verified one successful causal native NEAR payout",
+  );
+  assert.equal(
+    paidWithRejectedStatus.conflictReason,
+    "Verified payout evidence conflicts with the supplied proposal status.",
+  );
+  assert.equal(
+    paidWithRejectedStatus.transactionHash,
+    "2Nk6t5MJJ6uRUrpoNcY7Hhuaupw9do7ybvxpxZYYS1Dm",
+  );
+  assert.equal(
+    paidWithRejectedStatus.actionReceiptId,
+    "4Rag51CLP56uPZqovgMzEiNKNeSLF8Bn7G3WiNhuGtuJ",
+  );
+  assert.equal(
+    paidWithRejectedStatus.payoutReceiptId,
+    "H7tr1j2QAcFx3ibwqKeSHtBwpiaFYRaUfPbj6YzBddgJ",
+  );
+  assert.equal(
+    paidWithRejectedStatus.evidenceKey,
+    "testnet:marmaj.sputnikv2.testnet:63:4Rag51CLP56uPZqovgMzEiNKNeSLF8Bn7G3WiNhuGtuJ:H7tr1j2QAcFx3ibwqKeSHtBwpiaFYRaUfPbj6YzBddgJ",
+  );
+  assert.equal(
+    paidWithRejectedStatus.blockHash,
+    "8VY8wMxeLmDnncFcU6bpECgJfycypv22qAGm1HeNtygy",
+  );
 
   const ambiguousResponse = structuredClone(paid);
   const payoutId = "H7tr1j2QAcFx3ibwqKeSHtBwpiaFYRaUfPbj6YzBddgJ";
@@ -490,6 +566,76 @@ test("preserves adapter UNKNOWN, INVALID and AMBIGUOUS as distinct states", asyn
   );
   assert.equal(ambiguous.state, "AMBIGUOUS");
   assert.equal(ambiguous.adapterState, "AMBIGUOUS");
+});
+
+test("runtime observation validator rejects every non-exact shape before payment derivation", async () => {
+  const paid = await fixture("proposal-63-paid.json");
+  const malformed = [
+    {},
+    { kind: "UNRECOGNIZED", proposal: proposal(), receiptResponse: paid },
+    { kind: "ABSENT", fixtureLabel: "injected" },
+    {
+      kind: "PENDING",
+      fixtureLabel: "pending with receipt",
+      proposal: proposal(),
+      receiptResponse: paid,
+    },
+    { kind: "PENDING", fixtureLabel: "missing proposal" },
+    {
+      kind: "FIXTURE",
+      fixtureLabel: "missing receipt response",
+      proposal: proposal(),
+    },
+    {
+      kind: "FIXTURE",
+      fixtureLabel: "missing proposal",
+      receiptResponse: paid,
+    },
+    {
+      kind: "FIXTURE",
+      fixtureLabel: "injected field",
+      proposal: proposal(),
+      receiptResponse: paid,
+      paid: true,
+    },
+  ];
+  for (const observation of malformed) {
+    await assert.rejects(
+      deriveReviewerPaymentState(
+        submittedCycle("63"),
+        profile,
+        null,
+        JSON.parse(JSON.stringify(observation)) as ReviewerObservation,
+      ),
+      /observation/,
+    );
+  }
+});
+
+test("validated observation snapshot prevents caller mutation races", async () => {
+  const paid = await fixture("proposal-63-paid.json");
+  const observation = {
+    kind: "FIXTURE",
+    fixtureLabel: "mutable caller fixture",
+    proposal: proposal(),
+    receiptResponse: paid,
+  } as const;
+  const pendingResult = deriveReviewerPaymentState(
+    submittedCycle("63"),
+    profile,
+    null,
+    observation,
+  );
+  Object.assign(observation.proposal.kind.Transfer, {
+    receiver_id: "mallory.testnet",
+  });
+  Object.assign(observation.receiptResponse, { result: null });
+  const result = await pendingResult;
+  assert.equal(result.state, "PAID");
+  assert.equal(
+    result.payoutReceiptId,
+    "H7tr1j2QAcFx3ibwqKeSHtBwpiaFYRaUfPbj6YzBddgJ",
+  );
 });
 
 test("keeps malformed proposal inputs unknown and unsafe large adapter IDs fail closed", async () => {
