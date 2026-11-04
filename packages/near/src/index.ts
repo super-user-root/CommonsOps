@@ -1,3 +1,7 @@
+import { pinnedSputnikProfiles } from "./proposal-builder.ts";
+
+export * from "./proposal-builder.ts";
+
 export interface AdapterFoundationMetadata {
   readonly stage: "foundation";
   readonly networkConfigured: false;
@@ -14,17 +18,6 @@ export const adapterFoundationMetadata: AdapterFoundationMetadata =
     liveReadsEnabled: false,
     transactionsEnabled: false,
   });
-
-export const pinnedSputnikProfiles = Object.freeze({
-  "2.0.0": Object.freeze({
-    codeHash: "ZGdM2TFdQpcXrxPxvq25514EViyi9xBSboetDiB3Uiq",
-    payoutGraph: "DIRECT_CHILD_NO_CALLBACK" as const,
-  }),
-  "3.0.0": Object.freeze({
-    codeHash: null,
-    payoutGraph: "CALLBACK_REQUIRED" as const,
-  }),
-});
 
 export type PaymentState =
   "PAID" | "FAILED" | "INVALID" | "UNKNOWN" | "AMBIGUOUS";

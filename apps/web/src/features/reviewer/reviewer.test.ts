@@ -6,6 +6,7 @@ import type { Cycle } from "@commonsops/domain";
 import {
   buildReviewerModel,
   deriveReviewerPaymentState,
+  reviewerFixturePolicySnapshot,
   reviewerRequestDetail,
   type ReviewerModelInput,
   type ReviewerObservation,
@@ -22,6 +23,16 @@ const profile = {
   version: "2.0.0",
   codeHash: "ZGdM2TFdQpcXrxPxvq25514EViyi9xBSboetDiB3Uiq",
 };
+const fixturePolicy = reviewerFixturePolicySnapshot({
+  network: "TESTNET",
+  daoAccountId: dao,
+  profile,
+  proposalBondYocto: bond,
+  blockHash: "BL6QvZoH6WCmbAuAaiQUyhafeSmAsMar5NZxquHzyxvD",
+  blockHeight: "94689099",
+  provenanceLabel:
+    "P0-T01 get_policy fixture at final block 94689099; not queried live",
+});
 const fixtures = path.resolve(
   import.meta.dirname,
   "../../../../../tests/fixtures/sputnik",
@@ -96,9 +107,10 @@ function input(
   return {
     cycle: submittedCycle(),
     profile,
-    policy: { proposal_bond: bond },
+    policy: fixturePolicy,
     reviewedRegistryAccountId: "registry.testnet",
     proposalIdForLink: "63",
+    addProposalGas: null,
     observation: { kind: "ABSENT" },
     ...overrides,
   };
@@ -132,18 +144,38 @@ test("builds the exact native Transfer and unsigned add_proposal preview", async
       },
     },
   });
-  assert.deepEqual(model.addProposalIntent, {
-    receiverId: dao,
-    method: "add_proposal",
-    args: { proposal: model.proposal },
-    attachedDepositYocto: bond,
-    network: "TESTNET",
-    signingEnabled: false,
-    disabledReason:
-      "Unsigned preview only: no wallet connector is configured, this is not executable or authorized, and P3-T02 owns live transaction construction and signing.",
-  });
+  assert.equal(model.addProposalIntent.receiverId, dao);
+  assert.equal(model.addProposalIntent.method, "add_proposal");
+  assert.deepEqual(model.addProposalIntent.args, { proposal: model.proposal });
+  assert.equal(model.addProposalIntent.attachedDepositYocto, bond);
+  assert.equal(model.addProposalIntent.gas, null);
+  assert.equal(model.addProposalIntent.gasParameter.status, "REQUIRED");
+  assert.equal(
+    model.addProposalIntent.authorization.required,
+    "WALLET_OR_FULL_ACCESS_KEY",
+  );
+  assert.equal(
+    model.addProposalIntent.authorization.functionCallKeyCanAttachNear,
+    false,
+  );
+  assert.equal(
+    model.addProposalIntent.authorization.allowanceControlsAssetSpending,
+    false,
+  );
+  assert.equal(model.addProposalIntent.network, "TESTNET");
+  assert.equal(model.addProposalIntent.signingEnabled, false);
+  assert.equal(model.addProposalIntent.executable, false);
+  assert.match(model.addProposalIntent.disabledReason, /fixture-only/);
+  assert.match(
+    model.addProposalIntent.disabledReason,
+    /unsigned and non-executable/,
+  );
+  assert.equal(model.addProposalIntent.policySnapshot.block.height, "94689099");
   assert.equal("paid" in model, false);
   assert.equal("sign" in model.addProposalIntent, false);
+  assert.equal("send" in model.addProposalIntent, false);
+  assert.equal("nonce" in model.addProposalIntent, false);
+  assert.equal("signature" in model.addProposalIntent, false);
 });
 
 test("freezes the accepted cycle snapshot against later caller mutation", async () => {
@@ -192,7 +224,7 @@ test("builds exact zero-deposit link_proposal ABI only for a positive U64 ID", a
     network: "TESTNET",
     signingEnabled: false,
     disabledReason:
-      "Unsigned preview only: no wallet connector is configured, this is not executable or authorized, and P3-T02 owns live transaction construction and signing.",
+      "Unsigned preview only: no wallet connector is configured, this is not executable or authorized.",
   });
 
   const absent = await buildReviewerModel(input({ proposalIdForLink: null }));
@@ -211,19 +243,43 @@ test("builds exact zero-deposit link_proposal ABI only for a positive U64 ID", a
   assert.equal(maximum.link.intent?.args.proposal_id, U64_MAX);
 });
 
-test("accepts exact zero, positive, and maximum policy bond and rejects malformed u128", async () => {
+test("accepts exact zero, positive, and maximum validated policy bond", async () => {
   for (const value of ["0", "1", U128_MAX]) {
-    const model = await buildReviewerModel(
-      input({ policy: { proposal_bond: value } }),
-    );
+    const policy = reviewerFixturePolicySnapshot({
+      network: "TESTNET",
+      daoAccountId: dao,
+      profile,
+      proposalBondYocto: value,
+      blockHash: "BL6QvZoH6WCmbAuAaiQUyhafeSmAsMar5NZxquHzyxvD",
+      blockHeight: "94689099",
+      provenanceLabel: "focused policy fixture; not queried live",
+    });
+    const model = await buildReviewerModel(input({ policy }));
     assert.equal(model.addProposalIntent.attachedDepositYocto, value);
   }
   for (const invalid of ["00", "01", "-1", "1.5", `${U128_MAX}0`]) {
-    await assert.rejects(
-      buildReviewerModel(input({ policy: { proposal_bond: invalid } })),
-      /policy.proposal_bond/,
+    assert.throws(
+      () =>
+        reviewerFixturePolicySnapshot({
+          network: "TESTNET",
+          daoAccountId: dao,
+          profile,
+          proposalBondYocto: invalid,
+          blockHash: "BL6QvZoH6WCmbAuAaiQUyhafeSmAsMar5NZxquHzyxvD",
+          blockHeight: "94689099",
+          provenanceLabel: "invalid focused fixture",
+        }),
+      /proposalBondYocto/,
     );
   }
+  const legacy = await buildReviewerModel(
+    input({
+      policy: { proposal_bond: bond },
+    }),
+  );
+  assert.equal(legacy.addProposalIntent.attachedDepositYocto, bond);
+  assert.equal(legacy.policy.block.height, "0");
+  assert.match(legacy.policy.source.label, /Legacy fixture-only/);
 });
 
 test("fails closed on noncanonical cycle values and immutable recipient or evidence changes", async () => {
@@ -448,7 +504,7 @@ test("build model uses one call-time profile snapshot everywhere", async () => {
   );
   assert.match(
     unsupportedModel.addProposalIntent.disabledReason,
-    /profile\/code hash is unsupported/,
+    /policy snapshot does not match.*profile\/code hash/,
   );
 
   const supportedAtCall = { ...profile };

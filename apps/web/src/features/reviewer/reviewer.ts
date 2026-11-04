@@ -2,11 +2,22 @@ import type { Cycle, ProposalLink } from "@commonsops/domain";
 import { parseDecimal } from "@commonsops/domain";
 import type {
   ExpectedNativePayment,
+  NativeTransferProposal,
   PaymentState,
+  SputnikProfileInput,
+  UnsignedAddProposalRequest,
+  UnavailableUnsignedAddProposalPreview,
+  ValidatedSputnikPolicySnapshot,
   VerifiedPayment,
 } from "@commonsops/near";
 import {
-  pinnedSputnikProfiles,
+  buildNativeSputnikTransferProposal,
+  buildNativeTransferProposalPreview,
+  buildUnavailableAddProposalPreview,
+  isSupportedSputnikProfile,
+  isValidatedSputnikPolicySnapshot,
+  parseSputnikPolicyFixture,
+  prepareUnsignedAddProposalRequest,
   verifyNativeSputnikPayment,
 } from "@commonsops/near";
 import { deriveContributorCycleView } from "../contributor/contributor.ts";
@@ -15,26 +26,11 @@ export const MAX_PROPOSAL_DESCRIPTION_BYTES = 512;
 const MAX_FIXTURE_LABEL_BYTES = 200;
 const MAX_SAFE_PROPOSAL_ID = 9_007_199_254_740_991n;
 
-export interface PinnedSputnikProfileInput {
-  readonly version: string;
-  readonly codeHash: string;
-}
-
-export interface SputnikPolicySnapshot {
-  readonly proposal_bond: string;
-}
-
-export interface NativeTransferProposalPreview {
-  readonly description: string;
-  readonly kind: {
-    readonly Transfer: {
-      readonly token_id: "";
-      readonly receiver_id: string;
-      readonly amount: string;
-      readonly msg: null;
-    };
-  };
-}
+export type PinnedSputnikProfileInput = SputnikProfileInput;
+export type SputnikPolicySnapshot = ValidatedSputnikPolicySnapshot;
+export type ReviewerPolicyInput =
+  SputnikPolicySnapshot | { readonly proposal_bond: string };
+export type NativeTransferProposalPreview = NativeTransferProposal;
 
 export interface ReviewerTransactionIntent {
   readonly receiverId: string;
@@ -44,6 +40,11 @@ export interface ReviewerTransactionIntent {
   readonly network: "TESTNET";
   readonly signingEnabled: false;
   readonly disabledReason: string;
+  readonly gas?: string | null;
+  readonly gasParameter?: UnsignedAddProposalRequest["gasParameter"];
+  readonly executable?: false;
+  readonly authorization?: UnsignedAddProposalRequest["authorization"];
+  readonly policySnapshot?: ValidatedSputnikPolicySnapshot;
 }
 
 export type ProposalLinkPreviewStatus =
@@ -112,9 +113,10 @@ export type ReviewerRequestState =
 export interface ReviewerModelInput {
   readonly cycle: Cycle;
   readonly profile: PinnedSputnikProfileInput;
-  readonly policy: SputnikPolicySnapshot;
+  readonly policy: ReviewerPolicyInput;
   readonly reviewedRegistryAccountId: string | null;
   readonly proposalIdForLink: string | null;
+  readonly addProposalGas?: string | null;
   readonly observation: ReviewerObservation;
 }
 
@@ -124,7 +126,8 @@ export interface ReviewerModel {
   readonly profileSupported: boolean;
   readonly policy: SputnikPolicySnapshot;
   readonly proposal: NativeTransferProposalPreview;
-  readonly addProposalIntent: ReviewerTransactionIntent;
+  readonly addProposalIntent:
+    UnsignedAddProposalRequest | UnavailableUnsignedAddProposalPreview;
   readonly link: ProposalLinkPreview;
   readonly payment: ReviewerPaymentDisplay;
   readonly fixtureNotice: string;
@@ -314,12 +317,7 @@ function snapshotProfile(value: unknown): PinnedSputnikProfileInput {
 }
 
 function profileSupported(profile: PinnedSputnikProfileInput): boolean {
-  return Object.entries(pinnedSputnikProfiles).some(
-    ([version, pinned]) =>
-      version === profile.version &&
-      pinned.codeHash !== null &&
-      pinned.codeHash === profile.codeHash,
-  );
+  return isSupportedSputnikProfile(profile);
 }
 
 function freezeCycle(cycle: Cycle): Cycle {
@@ -385,32 +383,36 @@ async function submittedCycleSnapshot(cycle: Cycle): Promise<Cycle> {
   return snapshot;
 }
 
-function nativeProposal(cycle: Cycle): NativeTransferProposalPreview {
+function proposalExpectation(cycle: Cycle) {
   const claim = cycle.claim;
   const evidence = cycle.evidence;
   if (!claim || !evidence) {
     throw new Error("cycle: immutable claim and evidence required");
   }
-  const cycleId = `${cycle.key.template_id}:${cycle.key.period_index}`;
-  const description = `CommonsOps cycle ${cycleId}; evidence ${evidence.url}; commit ${evidence.commit_sha}`;
-  if (
-    !description ||
-    new TextEncoder().encode(description).length >
-      MAX_PROPOSAL_DESCRIPTION_BYTES
-  ) {
-    throw new Error("proposal.description: bounded plain text required");
-  }
-  return Object.freeze({
-    description,
-    kind: Object.freeze({
-      Transfer: Object.freeze({
-        token_id: "" as const,
-        receiver_id: claim.payout_recipient_id,
-        amount: cycle.amount_yocto,
-        msg: null,
-      }),
-    }),
-  });
+  return {
+    network: "TESTNET" as const,
+    daoAccountId: cycle.dao_account_id,
+    claimantId: claim.claimant_id,
+    recipientId: claim.payout_recipient_id,
+    amountYocto: cycle.amount_yocto,
+    cycle: {
+      templateId: cycle.key.template_id,
+      periodIndex: cycle.key.period_index,
+      evidenceUrl: evidence.url,
+      commitSha: evidence.commit_sha,
+    },
+  };
+}
+
+function nativeProposal(
+  cycle: Cycle,
+  profile: PinnedSputnikProfileInput,
+  supported: boolean,
+): NativeTransferProposalPreview {
+  const expected = proposalExpectation(cycle);
+  return supported
+    ? buildNativeSputnikTransferProposal({ ...expected, profile })
+    : buildNativeTransferProposalPreview(expected);
 }
 
 function signingReason(
@@ -425,24 +427,35 @@ function signingReason(
     operation === "link" && !reviewedRegistryAccountId
       ? "No reviewed testnet registry account is configured. "
       : "";
-  return `${profileReason}${registryReason}Unsigned preview only: no wallet connector is configured, this is not executable or authorized, and P3-T02 owns live transaction construction and signing.`;
+  return `${profileReason}${registryReason}Unsigned preview only: no wallet connector is configured, this is not executable or authorized.`;
 }
 
 function addProposalIntent(
   cycle: Cycle,
+  profile: PinnedSputnikProfileInput,
+  policy: ValidatedSputnikPolicySnapshot,
   proposal: NativeTransferProposalPreview,
-  bond: string,
+  gas: string | null,
   supported: boolean,
-): ReviewerTransactionIntent {
-  return Object.freeze({
-    receiverId: cycle.dao_account_id,
-    method: "add_proposal" as const,
-    args: Object.freeze({ proposal }),
-    attachedDepositYocto: bond,
-    network: "TESTNET" as const,
-    signingEnabled: false as const,
-    disabledReason: signingReason("proposal", null, supported),
-  });
+): UnsignedAddProposalRequest | UnavailableUnsignedAddProposalPreview {
+  return supported
+    ? prepareUnsignedAddProposalRequest({
+        network: "TESTNET",
+        daoAccountId: cycle.dao_account_id,
+        profile,
+        policy,
+        proposal: proposal as Parameters<
+          typeof prepareUnsignedAddProposalRequest
+        >[0]["proposal"],
+        gas,
+      })
+    : buildUnavailableAddProposalPreview({
+        network: "TESTNET",
+        daoAccountId: cycle.dao_account_id,
+        profile,
+        policy,
+        proposal,
+      });
 }
 
 function linkPreview(
@@ -769,21 +782,38 @@ export async function buildReviewerModel(
 ): Promise<ReviewerModel> {
   const cycleInput = input.cycle;
   const profile = snapshotProfile(input.profile);
-  const policyInput = input.policy;
-  if (!isObject(policyInput) || !hasExactKeys(policyInput, ["proposal_bond"])) {
-    throw new Error("policy: exact proposal_bond required");
-  }
-  const bond = policyInput.proposal_bond;
-  if (typeof bond !== "string") {
-    throw new Error("policy.proposal_bond: string required");
-  }
-  canonicalDecimal(bond, "policy.proposal_bond", 128, false);
+  const policyInput = isValidatedSputnikPolicySnapshot(input.policy)
+    ? input.policy
+    : isObject(input.policy) &&
+        hasExactKeys(input.policy, ["proposal_bond"]) &&
+        typeof input.policy.proposal_bond === "string"
+      ? parseSputnikPolicyFixture({
+          network: "TESTNET",
+          daoAccountId: cycleInput.dao_account_id,
+          profile,
+          proposalBondYocto: input.policy.proposal_bond,
+          blockHash: "11111111111111111111111111111111111111111111",
+          blockHeight: "0",
+          provenanceLabel:
+            "Legacy fixture-only policy input; block provenance was not supplied and no live query is claimed",
+        })
+      : (() => {
+          throw new Error("policy: validated policy snapshot required");
+        })();
   const reviewedRegistryAccountId = input.reviewedRegistryAccountId;
   const proposalIdForLink = input.proposalIdForLink;
+  const addProposalGas = input.addProposalGas ?? null;
+  if (
+    input.addProposalGas !== undefined &&
+    input.addProposalGas !== null &&
+    typeof input.addProposalGas !== "string"
+  ) {
+    throw new Error("addProposalGas: string, null, or omitted required");
+  }
   const observation = validateObservation(input.observation);
   const cycle = await submittedCycleSnapshot(cycleInput);
   const supported = profileSupported(profile);
-  const proposal = nativeProposal(cycle);
+  const proposal = nativeProposal(cycle, profile, supported);
   const link = linkPreview(
     cycle,
     reviewedRegistryAccountId,
@@ -801,13 +831,32 @@ export async function buildReviewerModel(
     cycle,
     profile,
     profileSupported: supported,
-    policy: Object.freeze({ proposal_bond: bond }),
+    policy: policyInput,
     proposal,
-    addProposalIntent: addProposalIntent(cycle, proposal, bond, supported),
+    addProposalIntent: addProposalIntent(
+      cycle,
+      profile,
+      policyInput,
+      proposal,
+      addProposalGas,
+      supported,
+    ),
     link,
     payment,
     fixtureNotice: notice,
   });
+}
+
+export function reviewerFixturePolicySnapshot(input: {
+  readonly network: "TESTNET";
+  readonly daoAccountId: string;
+  readonly profile: PinnedSputnikProfileInput;
+  readonly proposalBondYocto: string;
+  readonly blockHash: string;
+  readonly blockHeight: string;
+  readonly provenanceLabel: string;
+}): SputnikPolicySnapshot {
+  return parseSputnikPolicyFixture(input);
 }
 
 export function reviewerRequestDetail(state: ReviewerRequestState): string {
