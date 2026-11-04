@@ -17,6 +17,7 @@ import {
   isSupportedSputnikProfile,
   isValidatedSputnikPolicySnapshot,
   parseSputnikPolicyFixture,
+  parseSputnikPolicyFixtureWithoutBlock,
   prepareUnsignedAddProposalRequest,
   verifyNativeSputnikPayment,
 } from "@commonsops/near";
@@ -215,7 +216,136 @@ function hasExactKeys(
   );
 }
 
+function ownDataSnapshotOneOf(
+  value: unknown,
+  expectedSets: readonly (readonly string[])[],
+  field: string,
+): Readonly<Record<string, unknown>> {
+  if (!isObject(value)) throw new Error(`${field}: exact object required`);
+  let prototype: object | null;
+  let descriptors: Record<PropertyKey, PropertyDescriptor>;
+  try {
+    prototype = Object.getPrototypeOf(value);
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch {
+    throw new Error(`${field}: inspectable plain object required`);
+  }
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(`${field}: plain object required`);
+  }
+  const keys = Reflect.ownKeys(descriptors);
+  const expected = expectedSets.find(
+    (candidate) =>
+      keys.length === candidate.length &&
+      keys.every((key) => typeof key === "string" && candidate.includes(key)),
+  );
+  if (!expected) throw new Error(`${field}: unexpected or missing fields`);
+  const snapshot: Record<string, unknown> = {};
+  for (const key of expected) {
+    const descriptor = descriptors[key];
+    if (!descriptor?.enumerable || !("value" in descriptor)) {
+      throw new Error(`${field}.${key}: own enumerable data property required`);
+    }
+    snapshot[key] = descriptor.value;
+  }
+  return Object.freeze(snapshot);
+}
+
+function ownDataSnapshot(
+  value: unknown,
+  expected: readonly string[],
+  field: string,
+): Readonly<Record<string, unknown>> {
+  const snapshot = ownDataSnapshotOneOf(value, [expected], field);
+  cloneFixtureValue(value, field);
+  return snapshot;
+}
+
+function ownDataSnapshotRequired(
+  value: unknown,
+  required: readonly string[],
+  field: string,
+): Readonly<Record<string, unknown>> {
+  if (!isObject(value)) throw new Error(`${field}: exact object required`);
+  let prototype: object | null;
+  let descriptors: Record<PropertyKey, PropertyDescriptor>;
+  try {
+    prototype = Object.getPrototypeOf(value);
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch {
+    throw new Error(`${field}: inspectable plain object required`);
+  }
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(`${field}: plain object required`);
+  }
+  const keys = Reflect.ownKeys(descriptors);
+  if (
+    keys.some((key) => typeof key !== "string") ||
+    required.some((key) => !keys.includes(key))
+  ) {
+    throw new Error(`${field}: required own fields are missing`);
+  }
+  const snapshot: Record<string, unknown> = {};
+  for (const key of keys as string[]) {
+    const descriptor = descriptors[key];
+    if (!descriptor?.enumerable || !("value" in descriptor)) {
+      throw new Error(`${field}.${key}: own enumerable data property required`);
+    }
+    snapshot[key] = descriptor.value;
+  }
+  return Object.freeze(snapshot);
+}
+
+function assertDataTree(
+  value: unknown,
+  field: string,
+  seen = new Set<object>(),
+): void {
+  if (
+    value === null ||
+    ["string", "number", "boolean", "undefined"].includes(typeof value)
+  ) {
+    return;
+  }
+  if (typeof value !== "object") {
+    throw new Error(`${field}: data-only value required`);
+  }
+  if (seen.has(value)) throw new Error(`${field}: cyclic data is not allowed`);
+  seen.add(value);
+  const isArray = Array.isArray(value);
+  let prototype: object | null;
+  let descriptors: Record<PropertyKey, PropertyDescriptor>;
+  try {
+    prototype = Object.getPrototypeOf(value);
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch {
+    throw new Error(`${field}: inspectable plain data required`);
+  }
+  if (
+    (isArray && prototype !== Array.prototype) ||
+    (!isArray && prototype !== Object.prototype && prototype !== null)
+  ) {
+    throw new Error(`${field}: plain data required`);
+  }
+  for (const key of Reflect.ownKeys(descriptors)) {
+    if (key === "length" && isArray) continue;
+    const descriptor = descriptors[key];
+    if (
+      typeof key !== "string" ||
+      !descriptor?.enumerable ||
+      !("value" in descriptor)
+    ) {
+      throw new Error(
+        `${field}.${String(key)}: own enumerable data property required`,
+      );
+    }
+    assertDataTree(descriptor.value, `${field}.${key}`, seen);
+  }
+  seen.delete(value);
+}
+
 function cloneFixtureValue(value: unknown, field: string): unknown {
+  assertDataTree(value, field);
   try {
     return structuredClone(value);
   } catch {
@@ -224,36 +354,49 @@ function cloneFixtureValue(value: unknown, field: string): unknown {
 }
 
 function validateObservation(value: unknown): ValidatedReviewerObservation {
-  if (!isObject(value) || typeof value.kind !== "string") {
+  const snapshot = ownDataSnapshotOneOf(
+    value,
+    [
+      ["kind"],
+      ["kind", "fixtureLabel", "proposal"],
+      ["kind", "fixtureLabel", "proposal", "receiptResponse"],
+    ],
+    "observation",
+  );
+  const kind = snapshot.kind;
+  if (typeof kind !== "string") {
     throw new Error("observation: exact discriminated object required");
   }
-  switch (value.kind) {
-    case "ABSENT":
-      if (!hasExactKeys(value, ["kind"])) {
+  switch (kind) {
+    case "ABSENT": {
+      if (Reflect.ownKeys(snapshot).length !== 1) {
         throw new Error("observation.ABSENT: unexpected or missing fields");
       }
       return Object.freeze({ kind: "ABSENT" as const });
+    }
     case "PENDING": {
-      if (!hasExactKeys(value, ["kind", "fixtureLabel", "proposal"])) {
+      if (Reflect.ownKeys(snapshot).length !== 3) {
         throw new Error("observation.PENDING: unexpected or missing fields");
       }
-      if (typeof value.fixtureLabel !== "string") {
+      const fixtureLabelValue = snapshot.fixtureLabel;
+      const proposalValue = snapshot.proposal;
+      if (typeof fixtureLabelValue !== "string") {
         throw new Error("observation.PENDING.fixtureLabel: string required");
       }
       const fixtureLabel = boundedLabel(
-        value.fixtureLabel,
+        fixtureLabelValue,
         "observation.PENDING.fixtureLabel",
       );
-      if (value.proposal !== null && !isObject(value.proposal)) {
+      if (proposalValue !== null && !isObject(proposalValue)) {
         throw new Error(
           "observation.PENDING.proposal: object or null required",
         );
       }
       const proposal =
-        value.proposal === null
+        proposalValue === null
           ? null
           : (cloneFixtureValue(
-              value.proposal,
+              proposalValue,
               "observation.PENDING.proposal",
             ) as Record<string, unknown>);
       return Object.freeze({
@@ -263,32 +406,28 @@ function validateObservation(value: unknown): ValidatedReviewerObservation {
       });
     }
     case "FIXTURE": {
-      if (
-        !hasExactKeys(value, [
-          "kind",
-          "fixtureLabel",
-          "proposal",
-          "receiptResponse",
-        ])
-      ) {
+      if (Reflect.ownKeys(snapshot).length !== 4) {
         throw new Error("observation.FIXTURE: unexpected or missing fields");
       }
-      if (typeof value.fixtureLabel !== "string") {
+      const fixtureLabelValue = snapshot.fixtureLabel;
+      const proposalValue = snapshot.proposal;
+      const receiptResponseValue = snapshot.receiptResponse;
+      if (typeof fixtureLabelValue !== "string") {
         throw new Error("observation.FIXTURE.fixtureLabel: string required");
       }
       const fixtureLabel = boundedLabel(
-        value.fixtureLabel,
+        fixtureLabelValue,
         "observation.FIXTURE.fixtureLabel",
       );
       return Object.freeze({
         kind: "FIXTURE" as const,
         fixtureLabel,
         proposal: cloneFixtureValue(
-          value.proposal,
+          proposalValue,
           "observation.FIXTURE.proposal",
         ),
         receiptResponse: cloneFixtureValue(
-          value.receiptResponse,
+          receiptResponseValue,
           "observation.FIXTURE.receiptResponse",
         ),
       });
@@ -299,21 +438,18 @@ function validateObservation(value: unknown): ValidatedReviewerObservation {
 }
 
 function snapshotProfile(value: unknown): PinnedSputnikProfileInput {
-  if (!isObject(value) || !hasExactKeys(value, ["version", "codeHash"])) {
-    throw new Error("profile: exact version and codeHash required");
-  }
+  const snapshot = ownDataSnapshot(value, ["version", "codeHash"], "profile");
+  const version = snapshot.version;
+  const codeHash = snapshot.codeHash;
   if (
-    typeof value.version !== "string" ||
-    !value.version.trim() ||
-    typeof value.codeHash !== "string" ||
-    !value.codeHash.trim()
+    typeof version !== "string" ||
+    !version.trim() ||
+    typeof codeHash !== "string" ||
+    !codeHash.trim()
   ) {
     throw new Error("profile: nonempty version and codeHash strings required");
   }
-  return Object.freeze({
-    version: value.version,
-    codeHash: value.codeHash,
-  });
+  return Object.freeze({ version, codeHash });
 }
 
 function profileSupported(profile: PinnedSputnikProfileInput): boolean {
@@ -321,22 +457,52 @@ function profileSupported(profile: PinnedSputnikProfileInput): boolean {
 }
 
 function freezeCycle(cycle: Cycle): Cycle {
-  const key = Object.freeze({ ...cycle.key });
-  const claim = cycle.claim ? Object.freeze({ ...cycle.claim }) : null;
-  const evidence = cycle.evidence ? Object.freeze({ ...cycle.evidence }) : null;
-  const proposalLink = cycle.proposal_link
+  const cloned = cloneFixtureValue(cycle, "cycle");
+  if (!isObject(cloned)) throw new Error("cycle: plain object required");
+  const snapshot = ownDataSnapshot(
+    cloned,
+    [
+      "key",
+      "status",
+      "opens_at_ns",
+      "deadline_at_ns",
+      "dao_account_id",
+      "amount_yocto",
+      "claim",
+      "evidence",
+      "submitted_at_ns",
+      "proposal_link",
+    ],
+    "cycle",
+  );
+  const key = Object.freeze({ ...(snapshot.key as Cycle["key"]) });
+  const claim = snapshot.claim
+    ? Object.freeze({ ...(snapshot.claim as NonNullable<Cycle["claim"]>) })
+    : null;
+  const evidence = snapshot.evidence
     ? Object.freeze({
-        key: Object.freeze({ ...cycle.proposal_link.key }),
-        linked_at_ns: cycle.proposal_link.linked_at_ns,
+        ...(snapshot.evidence as NonNullable<Cycle["evidence"]>),
+      })
+    : null;
+  const rawLink = snapshot.proposal_link as Cycle["proposal_link"];
+  const proposalLink = rawLink
+    ? Object.freeze({
+        key: Object.freeze({ ...rawLink.key }),
+        linked_at_ns: rawLink.linked_at_ns,
       })
     : null;
   return Object.freeze({
-    ...cycle,
     key,
+    status: snapshot.status,
+    opens_at_ns: snapshot.opens_at_ns,
+    deadline_at_ns: snapshot.deadline_at_ns,
+    dao_account_id: snapshot.dao_account_id,
+    amount_yocto: snapshot.amount_yocto,
     claim,
     evidence,
+    submitted_at_ns: snapshot.submitted_at_ns,
     proposal_link: proposalLink,
-  });
+  } as Cycle);
 }
 
 async function submittedCycleSnapshot(cycle: Cycle): Promise<Cycle> {
@@ -758,10 +924,13 @@ export async function deriveReviewerPaymentState(
   proposalIdForLink: string | null,
   observation: ReviewerObservation,
 ): Promise<ReviewerPaymentDisplay> {
-  const profileSnapshot = snapshotProfile(profile);
+  const cycleReference = cycle;
+  const profileReference = profile;
   const proposalIdSnapshot = proposalIdForLink;
-  const validatedObservation = validateObservation(observation);
-  const snapshot = await submittedCycleSnapshot(cycle);
+  const observationReference = observation;
+  const profileSnapshot = snapshotProfile(profileReference);
+  const validatedObservation = validateObservation(observationReference);
+  const snapshot = await submittedCycleSnapshot(cycleReference);
   if (snapshot.proposal_link === null && proposalIdSnapshot !== null) {
     if (typeof proposalIdSnapshot !== "string") {
       throw new Error("proposalIdForLink: string or null required");
@@ -780,37 +949,59 @@ export async function deriveReviewerPaymentState(
 export async function buildReviewerModel(
   input: ReviewerModelInput,
 ): Promise<ReviewerModel> {
-  const cycleInput = input.cycle;
-  const profile = snapshotProfile(input.profile);
-  const policyInput = isValidatedSputnikPolicySnapshot(input.policy)
-    ? input.policy
-    : isObject(input.policy) &&
-        hasExactKeys(input.policy, ["proposal_bond"]) &&
-        typeof input.policy.proposal_bond === "string"
-      ? parseSputnikPolicyFixture({
+  const inputSnapshot = ownDataSnapshotRequired(
+    input,
+    [
+      "cycle",
+      "profile",
+      "policy",
+      "reviewedRegistryAccountId",
+      "proposalIdForLink",
+      "observation",
+    ],
+    "reviewer input",
+  );
+  const cycleInput = inputSnapshot.cycle as Cycle;
+  const profileInput = inputSnapshot.profile;
+  const policyReference = inputSnapshot.policy;
+  const reviewedRegistryAccountId = inputSnapshot.reviewedRegistryAccountId as
+    string | null;
+  const proposalIdForLink = inputSnapshot.proposalIdForLink as string | null;
+  const addProposalGasValue = Object.hasOwn(inputSnapshot, "addProposalGas")
+    ? inputSnapshot.addProposalGas
+    : null;
+  const observationReference = inputSnapshot.observation;
+  const profile = snapshotProfile(profileInput);
+  const policyInput = isValidatedSputnikPolicySnapshot(policyReference)
+    ? policyReference
+    : (() => {
+        const bare = ownDataSnapshot(
+          policyReference,
+          ["proposal_bond"],
+          "policy",
+        );
+        if (typeof bare.proposal_bond !== "string") {
+          throw new Error("policy.proposal_bond: string required");
+        }
+        return parseSputnikPolicyFixtureWithoutBlock({
           network: "TESTNET",
           daoAccountId: cycleInput.dao_account_id,
           profile,
-          proposalBondYocto: input.policy.proposal_bond,
-          blockHash: "11111111111111111111111111111111111111111111",
-          blockHeight: "0",
+          proposalBondYocto: bare.proposal_bond,
           provenanceLabel:
             "Legacy fixture-only policy input; block provenance was not supplied and no live query is claimed",
-        })
-      : (() => {
-          throw new Error("policy: validated policy snapshot required");
-        })();
-  const reviewedRegistryAccountId = input.reviewedRegistryAccountId;
-  const proposalIdForLink = input.proposalIdForLink;
-  const addProposalGas = input.addProposalGas ?? null;
+        });
+      })();
   if (
-    input.addProposalGas !== undefined &&
-    input.addProposalGas !== null &&
-    typeof input.addProposalGas !== "string"
+    addProposalGasValue !== undefined &&
+    addProposalGasValue !== null &&
+    typeof addProposalGasValue !== "string"
   ) {
     throw new Error("addProposalGas: string, null, or omitted required");
   }
-  const observation = validateObservation(input.observation);
+  const addProposalGas: string | null =
+    typeof addProposalGasValue === "string" ? addProposalGasValue : null;
+  const observation = validateObservation(observationReference);
   const cycle = await submittedCycleSnapshot(cycleInput);
   const supported = profileSupported(profile);
   const proposal = nativeProposal(cycle, profile, supported);

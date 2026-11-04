@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   buildNativeSputnikTransferProposal,
   buildNativeTransferProposalPreview,
+  buildUnavailableAddProposalPreview,
   buildUnsignedAddProposalRequest,
   isValidatedSputnikPolicySnapshot,
   parseSputnikPolicyFixture,
+  parseSputnikPolicyFixtureWithoutBlock,
   prepareUnsignedAddProposalRequest,
   querySputnikPolicy,
   SPUTNIK_POLICY_RPC_ID,
@@ -124,6 +126,7 @@ test("issues exactly one final get_policy call_function request with canonical e
   assert.equal(isValidatedSputnikPolicySnapshot(snapshot), true);
   assert.equal(snapshot.proposal_bond, bond);
   assert.deepEqual(snapshot.block, {
+    availability: "AVAILABLE",
     finality: "final",
     hash: blockHash,
     height: "94689099",
@@ -424,16 +427,19 @@ test("builds an exact unsigned add_proposal request with exact bond and reviewed
     signingEnabled: false,
     executable: false,
     authorization: {
+      bondCapability: "POSITIVE_BOND_REQUIRES_ATTACHED_NEAR",
       required: "WALLET_OR_FULL_ACCESS_KEY",
-      functionCallKeyAccepted: false,
+      commonsOpsFlow: "WALLET_ONLY",
+      functionCallKeyProtocolCompatible: false,
+      functionCallKeyIntegrationSupported: false,
       functionCallKeyCanAttachNear: false,
       allowanceControlsAssetSpending: false,
       notice:
-        "Wallet/full-access authorization is required. Function-call keys cannot attach NEAR; their allowance controls gas only, not asset spending. A zero current bond is valid, but this audited descriptor still does not authorize a function-call-key flow.",
+        "Wallet/full-access authorization is required because this positive policy bond attaches NEAR. Function-call keys cannot attach NEAR; their allowance controls gas only, not asset spending. CommonsOps does not implement or authorize a function-call-key flow.",
     },
     policySnapshot: policy,
     disabledReason:
-      "Policy provenance is fixture-only (P0-T01 get_policy fixture at final block 94689099; no live read); no live policy query is claimed. Wallet/full-access authorization is required. Function-call keys cannot attach NEAR; their allowance controls gas only, not asset spending. A zero current bond is valid, but this audited descriptor still does not authorize a function-call-key flow. This descriptor is unsigned and non-executable; it has no key, nonce, transaction block hash, signature, callback, transaction hash, or send method.",
+      "Policy provenance is fixture-only (P0-T01 get_policy fixture at final block 94689099; no live read); no live policy query is claimed. Wallet/full-access authorization is required because this positive policy bond attaches NEAR. Function-call keys cannot attach NEAR; their allowance controls gas only, not asset spending. CommonsOps does not implement or authorize a function-call-key flow. This descriptor is unsigned and non-executable; it has no key, nonce, transaction block hash, signature, callback, transaction hash, or send method.",
   });
   assert.strictEqual(request.args.proposal, builtProposal);
   assert.strictEqual(request.policySnapshot, policy);
@@ -535,34 +541,307 @@ test("rejects foreign DAO, network, profile, unvalidated policy and unvalidated 
   );
 });
 
-test("snapshots policy/proposal before caller mutation and retains final block provenance", async () => {
-  const response = rpcResult();
+test("rejects accessor, inherited and proxy boundaries before repeated reads", async () => {
+  let transportReads = 0;
+  const accessorInput = Object.defineProperties(
+    {},
+    {
+      transport: {
+        enumerable: true,
+        get() {
+          transportReads += 1;
+          return async () => rpcResult();
+        },
+      },
+      daoAccountId: { enumerable: true, value: dao },
+      profile: { enumerable: true, value: profile },
+    },
+  );
+  await assert.rejects(
+    querySputnikPolicy(accessorInput as never),
+    /data property/,
+  );
+  assert.equal(transportReads, 0);
+
+  const inherited = Object.create({ daoAccountId: dao });
+  Object.assign(inherited, { transport: async () => rpcResult(), profile });
+  await assert.rejects(querySputnikPolicy(inherited), /plain object|fields/);
+
+  const proxiedProfile = new Proxy({ ...profile }, {});
+  await assert.rejects(
+    querySputnikPolicy({
+      daoAccountId: dao,
+      profile: proxiedProfile,
+      transport: async () => rpcResult(),
+    }),
+    /proxies|cloneable/,
+  );
+
+  const validPolicy = fixturePolicy();
+  const validProposal = proposal();
+  let policyReads = 0;
+  let proposalReads = 0;
+  const request = Object.defineProperties(
+    {},
+    {
+      network: { enumerable: true, value: "TESTNET" },
+      daoAccountId: { enumerable: true, value: dao },
+      profile: { enumerable: true, value: profile },
+      policy: {
+        enumerable: true,
+        get() {
+          policyReads += 1;
+          return validPolicy;
+        },
+      },
+      proposal: {
+        enumerable: true,
+        get() {
+          proposalReads += 1;
+          return validProposal;
+        },
+      },
+      gas: { enumerable: true, value: "1" },
+    },
+  );
+  assert.throws(
+    () => prepareUnsignedAddProposalRequest(request as never),
+    /data property/,
+  );
+  assert.equal(policyReads, 0);
+  assert.equal(proposalReads, 0);
+});
+
+test("captures exact branded references once and resists post-invocation mutation", async () => {
+  const policy = fixturePolicy();
+  const builtProposal = proposal();
   const profileInput = { ...profile };
-  const snapshot = await querySputnikPolicy({
+  const requestInputValue = {
+    network: "TESTNET" as const,
     daoAccountId: dao,
     profile: profileInput,
-    transport: async () => response,
+    policy,
+    proposal: builtProposal,
+    gas: "1",
+  };
+  const built = prepareUnsignedAddProposalRequest(requestInputValue);
+  Object.assign(profileInput, { version: "mutated", codeHash: "mutated" });
+  Object.assign(requestInputValue, {
+    policy: structuredClone(policy),
+    proposal: structuredClone(builtProposal),
   });
-  Object.assign(profileInput, { version: "9.9.9", codeHash: "mutated" });
-  Object.assign(response.result, {
-    block_hash: "mutated",
-    result: bytes({ proposal_bond: "0" }),
-  });
-  assert.deepEqual(snapshot.profile, profile);
-  assert.equal(snapshot.proposal_bond, bond);
-  assert.equal(snapshot.block.hash, blockHash);
+  assert.strictEqual(built.policySnapshot, policy);
+  assert.strictEqual(built.args.proposal, builtProposal);
+  assert.equal(built.attachedDepositYocto, bond);
+  assert.equal(built.args.proposal.kind.Transfer.receiver_id, recipient);
+});
 
-  const builtProposal = proposal();
-  const request = buildUnsignedAddProposalRequest({
+test("accepts only canonical base58 CryptoHashes decoding to exactly 32 bytes", () => {
+  const zeroHash = "1".repeat(32);
+  const snapshot = fixturePolicy({ blockHash: zeroHash });
+  assert.equal(snapshot.block.hash, zeroHash);
+  for (const invalid of [
+    "1".repeat(31),
+    "1".repeat(33),
+    "1".repeat(44),
+    "z".repeat(44),
+    `1${blockHash}`,
+    "0".repeat(32),
+  ]) {
+    assert.throws(
+      () => fixturePolicy({ blockHash: invalid }),
+      /32 bytes|base58/,
+    );
+  }
+});
+
+test("represents missing fixture block provenance explicitly and deeply freezes it", () => {
+  const snapshot = parseSputnikPolicyFixtureWithoutBlock({
     network: "TESTNET",
     daoAccountId: dao,
     profile,
-    policy: snapshot,
-    proposal: builtProposal,
-    gas: "1",
+    proposalBondYocto: bond,
+    provenanceLabel: "legacy fixture without a recorded block",
   });
-  assert.equal(request.attachedDepositYocto, bond);
-  assert.equal(request.policySnapshot.block.height, "94689099");
-  assert.equal(Object.isFrozen(request), true);
-  assert.equal(Object.isFrozen(request.args), true);
+  assert.deepEqual(snapshot.block, {
+    availability: "UNAVAILABLE",
+    finality: null,
+    hash: null,
+    height: null,
+  });
+  assert.equal(snapshot.source.kind, "FIXTURE_UNAVAILABLE_PROVENANCE");
+  assert.equal(Object.isFrozen(snapshot), true);
+  assert.equal(Object.isFrozen(snapshot.profile), true);
+  assert.equal(Object.isFrozen(snapshot.block), true);
+  assert.equal(Object.isFrozen(snapshot.source), true);
+});
+
+test("strict RPC parsing rejects inherited, accessor, extra and ambiguous data", async () => {
+  const inherited = Object.create({
+    jsonrpc: "2.0",
+    id: SPUTNIK_POLICY_RPC_ID,
+  });
+  inherited.result = rpcResult().result;
+  const accessor = Object.defineProperties(
+    {},
+    {
+      jsonrpc: { enumerable: true, value: "2.0" },
+      id: { enumerable: true, value: SPUTNIK_POLICY_RPC_ID },
+      result: { enumerable: true, get: () => rpcResult().result },
+    },
+  );
+  const extra = { ...rpcResult(), extra: true };
+  for (const response of [inherited, accessor, extra]) {
+    await assert.rejects(
+      querySputnikPolicy({
+        daoAccountId: dao,
+        profile,
+        transport: async () => response,
+      }),
+      /plain object|data property|fields|cloneable/,
+    );
+  }
+  const duplicate = new TextEncoder().encode(
+    '{"proposal_bond":"1","proposal_bond":"2"}',
+  );
+  await assert.rejects(
+    querySputnikPolicy({
+      daoAccountId: dao,
+      profile,
+      transport: async () =>
+        rpcResult(undefined, { result: Array.from(duplicate) }),
+    }),
+    /duplicate JSON member proposal_bond/,
+  );
+});
+
+test("bounds base64 before parsing and bounds JSON-RPC error text/data", async () => {
+  const maxEncoded = "A".repeat(4 * Math.ceil((256 * 1024) / 3));
+  const tooLarge = `${maxEncoded}AAAA`;
+  await assert.rejects(
+    querySputnikPolicy({
+      daoAccountId: dao,
+      profile,
+      transport: async () => rpcResult(undefined, { result: tooLarge }),
+    }),
+    /encoded base64 length|JSON string exceeds the byte limit/,
+  );
+  await assert.rejects(
+    querySputnikPolicy({
+      daoAccountId: dao,
+      profile,
+      transport: async () => rpcResult(undefined, { result: maxEncoded }),
+    }),
+    /decoded byte length|UTF-8|JSON/,
+  );
+  for (const error of [
+    { code: -1, message: "x".repeat(1025) },
+    { code: -1, message: "bounded", data: "x".repeat(4097) },
+    { code: -1, message: "bounded", extra: true },
+  ]) {
+    await assert.rejects(
+      querySputnikPolicy({
+        daoAccountId: dao,
+        profile,
+        transport: async () => ({
+          jsonrpc: "2.0",
+          id: SPUTNIK_POLICY_RPC_ID,
+          error,
+        }),
+      }),
+      /bounded|fields|byte bound/,
+    );
+  }
+});
+
+test("unsupported preview validates exact native shape and is deeply frozen", () => {
+  const unsupportedProfile = { version: "9.9.9", codeHash: "unsupported" };
+  const policy = parseSputnikPolicyFixtureWithoutBlock({
+    network: "TESTNET",
+    daoAccountId: dao,
+    profile: unsupportedProfile,
+    proposalBondYocto: "0",
+    provenanceLabel: "unsupported display fixture",
+  });
+  const source = buildNativeTransferProposalPreview({
+    network: "TESTNET",
+    daoAccountId: dao,
+    claimantId: recipient,
+    recipientId: recipient,
+    amountYocto: "2",
+    cycle,
+  });
+  const preview = buildUnavailableAddProposalPreview({
+    network: "TESTNET",
+    daoAccountId: dao,
+    profile: unsupportedProfile,
+    policy,
+    proposal: source,
+  });
+  assert.equal(Object.isFrozen(preview.args.proposal), true);
+  assert.equal(Object.isFrozen(preview.args.proposal.kind), true);
+  assert.equal(Object.isFrozen(preview.args.proposal.kind.Transfer), true);
+  assert.throws(() => {
+    (preview.args.proposal.kind.Transfer as { amount: string }).amount = "999";
+  });
+  for (const invalid of [
+    { ...source, injected: true },
+    {
+      ...source,
+      kind: { Transfer: { ...source.kind.Transfer, injected: true } },
+    },
+    {
+      ...source,
+      kind: { Transfer: { ...source.kind.Transfer, token_id: "ft" } },
+    },
+    { ...source, kind: { Transfer: { ...source.kind.Transfer, msg: "x" } } },
+    { ...source, kind: { Transfer: { ...source.kind.Transfer, amount: "0" } } },
+    {
+      ...source,
+      kind: { Transfer: { ...source.kind.Transfer, receiver_id: "INVALID" } },
+    },
+  ]) {
+    assert.throws(() =>
+      buildUnavailableAddProposalPreview({
+        network: "TESTNET",
+        daoAccountId: dao,
+        profile: unsupportedProfile,
+        policy,
+        proposal: invalid as never,
+      }),
+    );
+  }
+});
+
+test("authorization distinguishes positive and zero-bond protocol capability", () => {
+  const positive = prepareUnsignedAddProposalRequest(
+    requestInput({ gas: null }),
+  );
+  assert.equal(
+    positive.authorization.bondCapability,
+    "POSITIVE_BOND_REQUIRES_ATTACHED_NEAR",
+  );
+  assert.equal(positive.authorization.functionCallKeyProtocolCompatible, false);
+  assert.equal(
+    positive.authorization.functionCallKeyIntegrationSupported,
+    false,
+  );
+  assert.equal(positive.authorization.required, "WALLET_OR_FULL_ACCESS_KEY");
+
+  const zero = prepareUnsignedAddProposalRequest(
+    requestInput({
+      policy: fixturePolicy({ proposalBondYocto: "0" }),
+      gas: null,
+    }),
+  );
+  assert.equal(zero.attachedDepositYocto, "0");
+  assert.equal(
+    zero.authorization.bondCapability,
+    "ZERO_BOND_REQUIRES_NO_ATTACHED_NEAR",
+  );
+  assert.equal(zero.authorization.functionCallKeyProtocolCompatible, true);
+  assert.equal(zero.authorization.functionCallKeyIntegrationSupported, false);
+  assert.equal(zero.authorization.required, "COMMONSOPS_WALLET_FLOW_ONLY");
+  assert.equal(zero.signingEnabled, false);
+  assert.equal(zero.executable, false);
 });

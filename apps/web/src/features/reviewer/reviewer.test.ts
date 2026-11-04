@@ -131,6 +131,96 @@ function pending(
   };
 }
 
+test("rejects accessor, inherited and proxy reviewer boundaries without repeated reads", async () => {
+  let profileReads = 0;
+  const profileAccessor = Object.defineProperties(
+    {},
+    {
+      version: {
+        enumerable: true,
+        get() {
+          profileReads += 1;
+          return profile.version;
+        },
+      },
+      codeHash: { enumerable: true, value: profile.codeHash },
+    },
+  );
+  await assert.rejects(
+    buildReviewerModel(input({ profile: profileAccessor as typeof profile })),
+    /data property/,
+  );
+  assert.equal(profileReads, 0);
+
+  const cycleAccessor = Object.defineProperties(
+    {},
+    {
+      ...Object.fromEntries(
+        Object.entries(submittedCycle()).map(([key, value]) => [
+          key,
+          { enumerable: true, value },
+        ]),
+      ),
+      amount_yocto: {
+        enumerable: true,
+        get() {
+          return amount63;
+        },
+      },
+    },
+  );
+  await assert.rejects(
+    buildReviewerModel(input({ cycle: cycleAccessor as Cycle })),
+    /structured clone|data property|plain object/,
+  );
+
+  const inheritedPolicy = Object.create({ proposal_bond: bond });
+  await assert.rejects(
+    buildReviewerModel(input({ policy: inheritedPolicy })),
+    /plain object|fields/,
+  );
+
+  const accessorObservation = Object.defineProperties(
+    {},
+    {
+      kind: { enumerable: true, value: "PENDING" },
+      fixtureLabel: {
+        enumerable: true,
+        get() {
+          return "accessor";
+        },
+      },
+      proposal: { enumerable: true, value: null },
+    },
+  );
+  await assert.rejects(
+    deriveReviewerPaymentState(
+      submittedCycle("63"),
+      profile,
+      null,
+      accessorObservation as ReviewerObservation,
+    ),
+    /data property/,
+  );
+});
+
+test("captures reviewer input once and resists immediate caller mutation", async () => {
+  const supplied = submittedCycle();
+  const observation = pending(null, "call-time fixture label");
+  const modelPromise = buildReviewerModel(
+    input({ cycle: supplied, observation, proposalIdForLink: null }),
+  );
+  Object.assign(supplied.claim!, { payout_recipient_id: "mallory.testnet" });
+  Object.assign(observation, { fixtureLabel: "mutated", proposal: proposal() });
+  const model = await modelPromise;
+  assert.equal(model.cycle.claim?.payout_recipient_id, recipient);
+  assert.equal(
+    model.fixtureNotice,
+    "Fixture-derived pending input: call-time fixture label",
+  );
+  assert.equal(model.payment.state, "NOT_LINKED");
+});
+
 test("builds the exact native Transfer and unsigned add_proposal preview", async () => {
   const model = await buildReviewerModel(input());
   assert.deepEqual(model.proposal, {
@@ -153,6 +243,14 @@ test("builds the exact native Transfer and unsigned add_proposal preview", async
   assert.equal(
     model.addProposalIntent.authorization.required,
     "WALLET_OR_FULL_ACCESS_KEY",
+  );
+  assert.equal(
+    model.addProposalIntent.authorization.functionCallKeyProtocolCompatible,
+    false,
+  );
+  assert.equal(
+    model.addProposalIntent.authorization.functionCallKeyIntegrationSupported,
+    false,
   );
   assert.equal(
     model.addProposalIntent.authorization.functionCallKeyCanAttachNear,
@@ -278,7 +376,13 @@ test("accepts exact zero, positive, and maximum validated policy bond", async ()
     }),
   );
   assert.equal(legacy.addProposalIntent.attachedDepositYocto, bond);
-  assert.equal(legacy.policy.block.height, "0");
+  assert.deepEqual(legacy.policy.block, {
+    availability: "UNAVAILABLE",
+    finality: null,
+    hash: null,
+    height: null,
+  });
+  assert.equal(legacy.policy.source.kind, "FIXTURE_UNAVAILABLE_PROVENANCE");
   assert.match(legacy.policy.source.label, /Legacy fixture-only/);
 });
 
