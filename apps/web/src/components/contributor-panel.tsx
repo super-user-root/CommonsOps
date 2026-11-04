@@ -17,6 +17,8 @@ interface ContributorPanelProps {
   readonly evidencePreview: Evidence | null;
   readonly intents: readonly ContributorTransactionIntent[];
   readonly requestState: ContributorRequestState;
+  readonly headingId?: string;
+  readonly headingLevel?: 2 | 3 | 4;
 }
 
 const actionLabels: Readonly<
@@ -60,19 +62,21 @@ export function ContributorPanel({
   evidencePreview,
   intents,
   requestState,
+  headingId = "contributor-heading",
+  headingLevel = 2,
 }: ContributorPanelProps) {
+  const Heading = headingLevel === 2 ? "h2" : headingLevel === 3 ? "h3" : "h4";
+  const Subheading =
+    headingLevel === 2 ? "h3" : headingLevel === 3 ? "h4" : "h5";
   const cycleId = `${view.key.template_id}:${view.key.period_index}`;
   const claim = view.cycle.claim;
   const evidence = view.cycle.evidence ?? evidencePreview;
 
   return (
-    <section
-      className="contributor-panel"
-      aria-labelledby="contributor-heading"
-    >
+    <section className="contributor-panel" aria-labelledby={headingId}>
       <header>
         <p className="eyebrow">Contributor preview · Testnet</p>
-        <h2 id="contributor-heading">Cycle {cycleId}</h2>
+        <Heading id={headingId}>Cycle {cycleId}</Heading>
         <p>{lifecycleMessage(view)}</p>
       </header>
 
@@ -123,7 +127,7 @@ export function ContributorPanel({
       </dl>
 
       <aside className="binding-notice" aria-labelledby="binding-heading">
-        <h3 id="binding-heading">Recipient binding</h3>
+        <Subheading id="binding-heading">Recipient binding</Subheading>
         <p>
           Claimant and payout recipient are the same NEAR account. There is no
           recipient input. Release or expiry clears both before submission;
@@ -186,7 +190,7 @@ export function ContributorPanel({
           const reasonId = `contributor-disabled-${intent.method}`;
           return (
             <article className="intent-preview" key={intent.method}>
-              <h3>{actionLabels[intent.method]}</h3>
+              <Subheading>{actionLabels[intent.method]}</Subheading>
               <dl>
                 <div>
                   <dt>Method</dt>

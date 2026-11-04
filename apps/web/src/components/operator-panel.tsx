@@ -8,6 +8,9 @@ interface OperatorPanelProps {
   readonly draft: CreateTemplateDraft;
   readonly intent: TransactionIntent;
   readonly state: OperatorRequestState;
+  readonly headingId?: string;
+  readonly headingLevel?: 2 | 3 | 4;
+  readonly eyebrow?: string;
 }
 
 function formatYocto(value: string) {
@@ -36,14 +39,22 @@ function stateDetail(state: OperatorRequestState) {
   return "No request prepared";
 }
 
-export function OperatorPanel({ draft, intent, state }: OperatorPanelProps) {
+export function OperatorPanel({
+  draft,
+  intent,
+  state,
+  headingId = "operator-heading",
+  headingLevel = 2,
+  eyebrow = "Operator preview",
+}: OperatorPanelProps) {
   const label = actionLabel(intent);
-  const disabledId = "operator-disabled-reason";
+  const Heading = headingLevel === 2 ? "h2" : headingLevel === 3 ? "h3" : "h4";
+  const disabledId = `${headingId}-disabled-reason`;
   return (
-    <section className="operator-panel" aria-labelledby="operator-heading">
+    <section className="operator-panel" aria-labelledby={headingId}>
       <div>
-        <p className="eyebrow">Operator preview</p>
-        <h2 id="operator-heading">{label}</h2>
+        <p className="eyebrow">{eyebrow}</p>
+        <Heading id={headingId}>{label}</Heading>
         <p>
           This preview uses exact integer wire values. Signing remains disabled
           until a reviewed testnet registry and wallet connector exist.
