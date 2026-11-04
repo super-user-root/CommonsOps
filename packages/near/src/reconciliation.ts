@@ -163,6 +163,11 @@ function plainPrototype(value: object, field: string): void {
   }
 }
 
+// Field-path diagnostics in the untrusted-input walkers never echo raw
+// own-property names (P3-T02 R2a pattern): the key component is a constant
+// placeholder, so adversarial keys cannot bloat or inject into error messages.
+const DIAGNOSTIC_KEY = "<key>";
+
 function captureOwnData(
   value: unknown,
   expectedKeySets: readonly (readonly string[])[],
@@ -283,7 +288,9 @@ function cloneJsonNode(
   for (const key of keys as string[]) {
     const descriptor = own[key];
     if (!descriptor?.enumerable || !("value" in descriptor)) {
-      throw new Error(`${field}.${key}: own enumerable data property required`);
+      throw new Error(
+        `${field}.${DIAGNOSTIC_KEY}: own enumerable data property required`,
+      );
     }
     Object.defineProperty(clone, key, {
       configurable: true,
@@ -291,7 +298,7 @@ function cloneJsonNode(
       writable: true,
       value: cloneJsonNode(
         descriptor.value,
-        `${field}.${key}`,
+        `${field}.${DIAGNOSTIC_KEY}`,
         state,
         depth + 1,
       ),
@@ -605,7 +612,7 @@ function canonicalJsonText(
       (key) =>
         `${JSON.stringify(key)}:${canonicalJsonText(
           values[key],
-          `${field}.${key}`,
+          `${field}.${DIAGNOSTIC_KEY}`,
           state,
           depth + 1,
         )}`,
@@ -842,6 +849,9 @@ function applyRecord(state: StoreState, value: unknown): ReconciliationResult {
   });
 }
 
+// The fingerprint preimage is exactly {schemaVersion, records}; the exported
+// snapshot adds the fingerprint field, which is excluded from the preimage so
+// imports can recompute and verify it over rebuilt canonical bytes.
 function snapshotPayload(state: StoreState): unknown {
   return {
     schemaVersion: RECONCILIATION_SCHEMA_VERSION,

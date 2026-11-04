@@ -313,6 +313,11 @@ interface CanonicalJsonState {
   readonly seen: Set<object>;
 }
 
+// Diagnostic field paths in the serializer never echo raw own-property names:
+// the key component is a constant placeholder, so adversarial keys cannot
+// bloat or inject into error messages.
+const DIAGNOSTIC_KEY = "<key>";
+
 function canonicalJsonData(
   value: object,
   field: string,
@@ -417,7 +422,7 @@ function canonicalJsonText(
       (key) =>
         `${JSON.stringify(key)}:${canonicalJsonText(
           descriptors[key]?.value as CanonicalJsonValue,
-          `${field}.${key}`,
+          `${field}.${DIAGNOSTIC_KEY}`,
           state,
           depth + 1,
         )}`,

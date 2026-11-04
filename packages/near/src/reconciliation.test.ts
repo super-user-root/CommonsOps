@@ -950,3 +950,43 @@ test("empty-store fingerprint matches an independent SHA-256 of the canonical by
     createHash("sha256").update(bytes).digest("hex"),
   );
 });
+
+test("nested adversarial keys yield bounded content-free diagnostics", async () => {
+  const store = createReconciliationStore();
+  const before = storeFingerprintState(store);
+  const hugeKey = "K".repeat(120_000);
+  const hugeInnerKey = "E".repeat(120_000);
+  const inner: Record<string, unknown> = {};
+  Object.defineProperty(inner, hugeInnerKey, {
+    enumerable: true,
+    get() {
+      return 1;
+    },
+  });
+  const rejection = await reconcilePayment({
+    expectation: expectation(),
+    candidate: candidate(),
+    transport: async () => ({
+      jsonrpc: "2.0",
+      id: RECONCILIATION_TX_STATUS_RPC_ID,
+      result: { [hugeKey]: inner },
+    }),
+    provenance: PROVENANCE,
+    store,
+  }).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  assert.ok(rejection instanceof Error, "expected the walk to reject");
+  const message = rejection.message;
+  assert.match(message, /own enumerable data property required/);
+  assert.ok(
+    new TextEncoder().encode(message).length <= 256,
+    `diagnostic is not bounded: ${new TextEncoder().encode(message).length} bytes`,
+  );
+  assert.equal(message.includes(hugeKey), false);
+  assert.equal(message.includes(hugeInnerKey), false);
+  assert.equal(message.includes(hugeKey.slice(0, 64)), false);
+  assert.equal(message.includes(hugeInnerKey.slice(0, 64)), false);
+  assert.deepEqual(storeFingerprintState(store), before);
+});

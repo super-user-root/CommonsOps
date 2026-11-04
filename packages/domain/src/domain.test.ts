@@ -248,3 +248,32 @@ test("canonical JSON serializer sorts keys and rejects unsafe data", () => {
     true,
   );
 });
+
+test("nested adversarial keys yield bounded content-free serializer diagnostics", () => {
+  const hugeKey = "K".repeat(120_000);
+  const hugeInnerKey = "E".repeat(120_000);
+  const inner: Record<string, unknown> = {};
+  Object.defineProperty(inner, hugeInnerKey, {
+    enumerable: true,
+    get() {
+      return 1;
+    },
+  });
+  let caught: unknown = null;
+  try {
+    canonicalJsonString({ [hugeKey]: inner } as never);
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught instanceof Error, "expected the serializer to throw");
+  const message = caught.message;
+  assert.match(message, /ERR_NOT_JSON_SAFE/);
+  assert.ok(
+    new TextEncoder().encode(message).length <= 256,
+    `diagnostic is not bounded: ${new TextEncoder().encode(message).length} bytes`,
+  );
+  assert.equal(message.includes(hugeKey), false);
+  assert.equal(message.includes(hugeInnerKey), false);
+  assert.equal(message.includes(hugeKey.slice(0, 64)), false);
+  assert.equal(message.includes(hugeInnerKey.slice(0, 64)), false);
+});
