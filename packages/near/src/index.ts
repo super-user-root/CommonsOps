@@ -1,6 +1,7 @@
 import { pinnedSputnikProfiles } from "./proposal-builder.ts";
 
 export * from "./proposal-builder.ts";
+export * from "./reconciliation.ts";
 
 export interface AdapterFoundationMetadata {
   readonly stage: "foundation";

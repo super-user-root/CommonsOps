@@ -1,0 +1,131 @@
+{
+  "jsonrpc": "2.0",
+  "id": "commonsops:tx_status",
+  "result": {
+    "final_execution_status": "FINAL",
+    "status": { "SuccessValue": "" },
+    "transaction": {
+      "actions": [
+        {
+          "FunctionCall": {
+            "args": "eyJpZCI6NzcsImFjdGlvbiI6IlZvdGVBcHByb3ZlIn0=",
+            "deposit": "0",
+            "gas": 150000000000000,
+            "method_name": "act_proposal"
+          }
+        }
+      ],
+      "hash": "ERuBPTRPpks6JxZ5pv7zePnv3Ea2d4Fzj9zAwQdS5KqK",
+      "nonce": 90758355000178,
+      "priority_fee": 0,
+      "public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp",
+      "receiver_id": "dao.example.testnet",
+      "signature": "ed25519:CWav3YHpX9Dc9QdB7fHwj5m2WnkzHRLsTGRAxn9peA87Sio9Q6yECJPrENoBRzfTDQXzVHSgeNsqJZxHaYS8vRe",
+      "signer_id": "alice.example.testnet"
+    },
+    "transaction_outcome": {
+      "block_hash": "FmXzo5rZjPtDhtQFkw9Pk6R6joYo9MiNYVYzr4kQc2fP",
+      "id": "ERuBPTRPpks6JxZ5pv7zePnv3Ea2d4Fzj9zAwQdS5KqK",
+      "outcome": {
+        "executor_id": "alice.example.testnet",
+        "gas_burnt": 2428019381096,
+        "logs": [],
+        "metadata": { "gas_profile": null, "version": 1 },
+        "receipt_ids": ["45HkncuSzuJteNpvN3xHMEWoQnabFfaa2NXEt8pANvoD"],
+        "status": {
+          "SuccessReceiptId": "45HkncuSzuJteNpvN3xHMEWoQnabFfaa2NXEt8pANvoD"
+        },
+        "tokens_burnt": "242801938109600000000"
+      },
+      "proof": []
+    },
+    "receipts": [
+      {
+        "predecessor_id": "alice.example.testnet",
+        "priority": 0,
+        "receipt": {
+          "Action": {
+            "actions": [
+              {
+                "FunctionCall": {
+                  "args": "eyJpZCI6NzcsImFjdGlvbiI6IlZvdGVBcHByb3ZlIn0=",
+                  "deposit": "0",
+                  "gas": 150000000000000,
+                  "method_name": "act_proposal"
+                }
+              }
+            ],
+            "gas_price": "250008035",
+            "input_data_ids": [],
+            "is_promise_yield": false,
+            "output_data_receivers": [],
+            "signer_id": "alice.example.testnet",
+            "signer_public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp"
+          }
+        },
+        "receipt_id": "45HkncuSzuJteNpvN3xHMEWoQnabFfaa2NXEt8pANvoD",
+        "receiver_id": "dao.example.testnet"
+      },
+      {
+        "predecessor_id": "dao.example.testnet",
+        "priority": 0,
+        "receipt": {
+          "Action": {
+            "actions": [
+              { "Transfer": { "deposit": "19000000000000000000000" } }
+            ],
+            "gas_price": "250008035",
+            "input_data_ids": [],
+            "is_promise_yield": false,
+            "output_data_receivers": [],
+            "signer_id": "alice.example.testnet",
+            "signer_public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp"
+          }
+        },
+        "receipt_id": "tdUCkzBWFr3qP1TWWCiKANL6y4KmCjo7injsHoXgmow",
+        "receiver_id": "alice.example.testnet"
+      }
+    ],
+    "receipts_outcome": [
+      {
+        "block_hash": "6strjk3awXEtY8E6FnMnMfCrgaT6gw4mvsh4je7XpXpJ",
+        "id": "45HkncuSzuJteNpvN3xHMEWoQnabFfaa2NXEt8pANvoD",
+        "outcome": {
+          "executor_id": "dao.example.testnet",
+          "gas_burnt": 4562812612238,
+          "logs": [],
+          "metadata": { "gas_profile": null, "version": 1 },
+          "receipt_ids": ["tdUCkzBWFr3qP1TWWCiKANL6y4KmCjo7injsHoXgmow"],
+          "status": {
+            "Failure": {
+              "ActionError": {
+                "index": 0,
+                "kind": {
+                  "FunctionCallError": {
+                    "ExecutionError": "Exceeded the account balance."
+                  }
+                }
+              }
+            }
+          },
+          "tokens_burnt": "456281261223800000000"
+        },
+        "proof": []
+      },
+      {
+        "block_hash": "CRjAbZ8zcb9r8qu6Bf4tZjZaaH7keFXkYtaSkew7cePV",
+        "id": "tdUCkzBWFr3qP1TWWCiKANL6y4KmCjo7injsHoXgmow",
+        "outcome": {
+          "executor_id": "alice.example.testnet",
+          "gas_burnt": 223182562500,
+          "logs": [],
+          "metadata": { "gas_profile": null, "version": 1 },
+          "receipt_ids": [],
+          "status": { "SuccessValue": "" },
+          "tokens_burnt": "22318256250000000000"
+        },
+        "proof": []
+      }
+    ]
+  }
+}
