@@ -295,6 +295,24 @@ function validateObservation(value: unknown): ValidatedReviewerObservation {
   }
 }
 
+function snapshotProfile(value: unknown): PinnedSputnikProfileInput {
+  if (!isObject(value) || !hasExactKeys(value, ["version", "codeHash"])) {
+    throw new Error("profile: exact version and codeHash required");
+  }
+  if (
+    typeof value.version !== "string" ||
+    !value.version.trim() ||
+    typeof value.codeHash !== "string" ||
+    !value.codeHash.trim()
+  ) {
+    throw new Error("profile: nonempty version and codeHash strings required");
+  }
+  return Object.freeze({
+    version: value.version,
+    codeHash: value.codeHash,
+  });
+}
+
 function profileSupported(profile: PinnedSputnikProfileInput): boolean {
   return Object.entries(pinnedSputnikProfiles).some(
     ([version, pinned]) =>
@@ -727,19 +745,21 @@ export async function deriveReviewerPaymentState(
   proposalIdForLink: string | null,
   observation: ReviewerObservation,
 ): Promise<ReviewerPaymentDisplay> {
+  const profileSnapshot = snapshotProfile(profile);
+  const proposalIdSnapshot = proposalIdForLink;
   const validatedObservation = validateObservation(observation);
   const snapshot = await submittedCycleSnapshot(cycle);
-  if (snapshot.proposal_link === null && proposalIdForLink !== null) {
-    if (typeof proposalIdForLink !== "string") {
+  if (snapshot.proposal_link === null && proposalIdSnapshot !== null) {
+    if (typeof proposalIdSnapshot !== "string") {
       throw new Error("proposalIdForLink: string or null required");
     }
-    canonicalDecimal(proposalIdForLink, "proposalIdForLink", 64, true);
+    canonicalDecimal(proposalIdSnapshot, "proposalIdForLink", 64, true);
   }
   fixtureNotice(validatedObservation);
   return derivePaymentFromSnapshot(
     snapshot,
-    profile,
-    proposalIdForLink,
+    profileSnapshot,
+    proposalIdSnapshot,
     validatedObservation,
   );
 }
@@ -747,31 +767,39 @@ export async function deriveReviewerPaymentState(
 export async function buildReviewerModel(
   input: ReviewerModelInput,
 ): Promise<ReviewerModel> {
-  const observation = validateObservation(input.observation);
-  const cycle = await submittedCycleSnapshot(input.cycle);
-  const supported = profileSupported(input.profile);
-  if (!input.profile.version || !input.profile.codeHash) {
-    throw new Error("profile: version and code hash required");
+  const cycleInput = input.cycle;
+  const profile = snapshotProfile(input.profile);
+  const policyInput = input.policy;
+  if (!isObject(policyInput) || !hasExactKeys(policyInput, ["proposal_bond"])) {
+    throw new Error("policy: exact proposal_bond required");
   }
-  const bond = input.policy.proposal_bond;
+  const bond = policyInput.proposal_bond;
+  if (typeof bond !== "string") {
+    throw new Error("policy.proposal_bond: string required");
+  }
   canonicalDecimal(bond, "policy.proposal_bond", 128, false);
+  const reviewedRegistryAccountId = input.reviewedRegistryAccountId;
+  const proposalIdForLink = input.proposalIdForLink;
+  const observation = validateObservation(input.observation);
+  const cycle = await submittedCycleSnapshot(cycleInput);
+  const supported = profileSupported(profile);
   const proposal = nativeProposal(cycle);
   const link = linkPreview(
     cycle,
-    input.reviewedRegistryAccountId,
-    input.proposalIdForLink,
+    reviewedRegistryAccountId,
+    proposalIdForLink,
     supported,
   );
   const notice = fixtureNotice(observation);
   const payment = derivePaymentFromSnapshot(
     cycle,
-    input.profile,
-    input.proposalIdForLink,
+    profile,
+    proposalIdForLink,
     observation,
   );
   return Object.freeze({
     cycle,
-    profile: Object.freeze({ ...input.profile }),
+    profile,
     profileSupported: supported,
     policy: Object.freeze({ proposal_bond: bond }),
     proposal,

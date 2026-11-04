@@ -340,6 +340,141 @@ test("unsupported profile is UNKNOWN before every linked observation mapping", a
   }
 });
 
+test("requires exact nonempty profile strings before asynchronous validation", async () => {
+  for (const invalid of [
+    { version: "", codeHash: profile.codeHash },
+    { version: "   ", codeHash: profile.codeHash },
+    { version: profile.version, codeHash: "" },
+    { version: profile.version, codeHash: "   " },
+    { version: profile.version } as unknown as typeof profile,
+    { ...profile, injected: true } as typeof profile,
+  ]) {
+    await assert.rejects(
+      deriveReviewerPaymentState(
+        submittedCycle("63"),
+        invalid,
+        null,
+        pending(null),
+      ),
+      /profile/,
+    );
+    await assert.rejects(
+      buildReviewerModel(
+        input({ cycle: submittedCycle("63"), profile: invalid }),
+      ),
+      /profile/,
+    );
+  }
+});
+
+test("derive payment uses the call-time profile snapshot across async validation", async () => {
+  const paid = await fixture("proposal-63-paid.json");
+  const observation: ReviewerObservation = {
+    kind: "FIXTURE",
+    fixtureLabel: "profile mutation fixture",
+    proposal: proposal(),
+    receiptResponse: paid,
+  };
+
+  const unsupportedAtCall = {
+    version: "9.9.9",
+    codeHash: "unsupported",
+  };
+  const unsupportedResult = deriveReviewerPaymentState(
+    submittedCycle("63"),
+    unsupportedAtCall,
+    null,
+    observation,
+  );
+  Object.assign(unsupportedAtCall, profile);
+  const stillUnknown = await unsupportedResult;
+  assert.equal(stillUnknown.state, "UNKNOWN");
+  assert.match(stillUnknown.reason, /Unsupported Sputnik deployment profile/);
+  assert.equal(stillUnknown.adapterState, null);
+
+  const supportedAtCall = { ...profile };
+  const supportedResult = deriveReviewerPaymentState(
+    submittedCycle("63"),
+    supportedAtCall,
+    null,
+    observation,
+  );
+  Object.assign(supportedAtCall, {
+    version: "9.9.9",
+    codeHash: "unsupported",
+  });
+  const stillPaid = await supportedResult;
+  assert.equal(stillPaid.state, "PAID");
+  assert.equal(stillPaid.adapterState, "PAID");
+  assert.equal(
+    stillPaid.payoutReceiptId,
+    "H7tr1j2QAcFx3ibwqKeSHtBwpiaFYRaUfPbj6YzBddgJ",
+  );
+});
+
+test("build model uses one call-time profile snapshot everywhere", async () => {
+  const paid = await fixture("proposal-63-paid.json");
+  const observation: ReviewerObservation = {
+    kind: "FIXTURE",
+    fixtureLabel: "profile mutation model fixture",
+    proposal: proposal(),
+    receiptResponse: paid,
+  };
+
+  const unsupportedAtCall = {
+    version: "9.9.9",
+    codeHash: "unsupported",
+  };
+  const unsupportedModelPromise = buildReviewerModel(
+    input({
+      cycle: submittedCycle("63"),
+      proposalIdForLink: null,
+      profile: unsupportedAtCall,
+      observation,
+    }),
+  );
+  Object.assign(unsupportedAtCall, profile);
+  const unsupportedModel = await unsupportedModelPromise;
+  assert.deepEqual(unsupportedModel.profile, {
+    version: "9.9.9",
+    codeHash: "unsupported",
+  });
+  assert.equal(Object.isFrozen(unsupportedModel.profile), true);
+  assert.equal(unsupportedModel.profileSupported, false);
+  assert.equal(unsupportedModel.payment.state, "UNKNOWN");
+  assert.match(
+    unsupportedModel.payment.reason,
+    /Unsupported Sputnik deployment profile/,
+  );
+  assert.match(
+    unsupportedModel.addProposalIntent.disabledReason,
+    /profile\/code hash is unsupported/,
+  );
+
+  const supportedAtCall = { ...profile };
+  const supportedModelPromise = buildReviewerModel(
+    input({
+      cycle: submittedCycle("63"),
+      proposalIdForLink: null,
+      profile: supportedAtCall,
+      observation,
+    }),
+  );
+  Object.assign(supportedAtCall, {
+    version: "9.9.9",
+    codeHash: "unsupported",
+  });
+  const supportedModel = await supportedModelPromise;
+  assert.deepEqual(supportedModel.profile, profile);
+  assert.equal(Object.isFrozen(supportedModel.profile), true);
+  assert.equal(supportedModel.profileSupported, true);
+  assert.equal(supportedModel.payment.state, "PAID");
+  assert.doesNotMatch(
+    supportedModel.addProposalIntent.disabledReason,
+    /profile\/code hash is unsupported/,
+  );
+});
+
 test("maps absent, prepared, governance, approved-only and rejected proposal states truthfully", async () => {
   const absent = await deriveReviewerPaymentState(
     submittedCycle(),
