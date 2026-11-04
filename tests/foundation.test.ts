@@ -27,9 +27,9 @@ test("NEAR adapter export enables no network, wallet, reads, or transactions", (
 });
 
 test("shell metadata accurately describes the scaffold", () => {
-  assert.equal(siteMetadata.title, "CommonsOps | Foundation");
-  assert.match(siteMetadata.description, /No live data or transactions/);
-  assert.equal(siteMetadata.stage, "foundation");
+  assert.equal(siteMetadata.title, "CommonsOps | Testnet workspace");
+  assert.match(siteMetadata.description, /Wallet signing remains disabled/);
+  assert.equal(siteMetadata.stage, "workspace foundation");
   assert.equal(siteMetadata.liveData, false);
   assert.equal(siteMetadata.transactions, false);
 });
