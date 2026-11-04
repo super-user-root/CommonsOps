@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createTemplateIntent,
+  CYCLE_MIN_DEPOSIT_YOCTO,
+  TEMPLATE_MIN_DEPOSIT_YOCTO,
   templateActionIntent,
   toTemplateInput,
 } from "./operator.ts";
@@ -49,6 +51,59 @@ test("rejects floating, overflow, overlapping and malformed values", () => {
   );
   assert.throws(() => toTemplateInput({ ...draft, daoAccountId: "Not Valid" }));
   assert.throws(() => toTemplateInput({ ...draft, title: "é".repeat(61) }));
+});
+
+test("rejects field-specific integer and time overflows", () => {
+  assert.throws(() =>
+    toTemplateInput({ ...draft, intervalNs: String(1n << 64n) }),
+  );
+  assert.throws(() =>
+    toTemplateInput({
+      ...draft,
+      startAtNs: String((1n << 64n) - 1n),
+      workWindowNs: "1",
+    }),
+  );
+  assert.throws(() =>
+    templateActionIntent(
+      "registry.testnet",
+      "materialize_cycle",
+      String(1n << 64n),
+      undefined,
+      CYCLE_MIN_DEPOSIT_YOCTO.toString(),
+    ),
+  );
+});
+
+test("enforces storage reserve minimums and zero pause deposit", () => {
+  assert.throws(() =>
+    createTemplateIntent(
+      null,
+      draft,
+      (TEMPLATE_MIN_DEPOSIT_YOCTO - 1n).toString(),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    createTemplateIntent(null, draft, TEMPLATE_MIN_DEPOSIT_YOCTO.toString()),
+  );
+  assert.throws(() =>
+    templateActionIntent(
+      "registry.testnet",
+      "materialize_cycle",
+      "7",
+      undefined,
+      (CYCLE_MIN_DEPOSIT_YOCTO - 1n).toString(),
+    ),
+  );
+  assert.throws(() =>
+    templateActionIntent(
+      "registry.testnet",
+      "set_template_active",
+      "7",
+      true,
+      "1",
+    ),
+  );
 });
 
 test("builds pause and materialize intents with exact deposits", () => {

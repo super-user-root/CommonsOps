@@ -1,8 +1,9 @@
 import type { TemplateInput } from "@commonsops/domain";
+import { registryBounds } from "@commonsops/domain";
 
 export type OperatorRequestState =
   | { readonly status: "IDLE" }
-  | { readonly status: "PENDING"; readonly method: string }
+  | { readonly status: "PENDING"; readonly method: TransactionIntent["method"] }
   | { readonly status: "SUCCESS"; readonly transactionHash: string }
   | { readonly status: "ERROR"; readonly message: string };
 
@@ -28,14 +29,39 @@ export interface TransactionIntent {
   readonly disabledReason: string;
 }
 
-function canonicalDecimal(value: string, field: string, allowZero = false) {
-  if (!/^(0|[1-9][0-9]*)$/.test(value))
+const U64_MAX = (1n << 64n) - 1n;
+const U128_MAX = (1n << 128n) - 1n;
+// Testnet storage byte price, 10^19 yoctoNEAR per byte. Deployment/profile work must recheck it.
+export const STORAGE_BYTE_COST_YOCTO = 10_000_000_000_000_000_000n;
+export const TEMPLATE_MIN_DEPOSIT_YOCTO =
+  STORAGE_BYTE_COST_YOCTO * BigInt(registryBounds.templateReserveBytes);
+export const CYCLE_MIN_DEPOSIT_YOCTO =
+  STORAGE_BYTE_COST_YOCTO * BigInt(registryBounds.cycleReserveBytes);
+
+function canonicalDecimal(
+  value: string,
+  field: string,
+  bits: 64 | 128,
+  allowZero = false,
+) {
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) {
     throw new Error(`${field}: decimal string required`);
+  }
   const amount = BigInt(value);
   if (!allowZero && amount === 0n)
     throw new Error(`${field}: must be positive`);
-  if (amount > (1n << 128n) - 1n) throw new Error(`${field}: overflow`);
+  if (amount > (bits === 64 ? U64_MAX : U128_MAX)) {
+    throw new Error(`${field}: overflow`);
+  }
   return value;
+}
+
+function minimumDeposit(value: string, minimum: bigint, field: string) {
+  const canonical = canonicalDecimal(value, field, 128);
+  if (BigInt(canonical) < minimum) {
+    throw new Error(`${field}: below required storage reserve`);
+  }
+  return canonical;
 }
 
 export function toTemplateInput(draft: CreateTemplateDraft): TemplateInput {
@@ -48,29 +74,40 @@ export function toTemplateInput(draft: CreateTemplateDraft): TemplateInput {
   }
   if (
     !draft.title.trim() ||
-    new TextEncoder().encode(draft.title).length > 120
+    new TextEncoder().encode(draft.title).length > registryBounds.maxTitleBytes
   ) {
     throw new Error("title: 1–120 UTF-8 bytes required");
   }
-  if (new TextEncoder().encode(draft.description).length > 1024) {
+  if (
+    new TextEncoder().encode(draft.description).length >
+    registryBounds.maxDescriptionBytes
+  ) {
     throw new Error("description: maximum 1024 UTF-8 bytes");
   }
-  const interval = BigInt(canonicalDecimal(draft.intervalNs, "intervalNs"));
-  const window = BigInt(canonicalDecimal(draft.workWindowNs, "workWindowNs"));
+  const start = BigInt(
+    canonicalDecimal(draft.startAtNs, "startAtNs", 64, true),
+  );
+  const interval = BigInt(canonicalDecimal(draft.intervalNs, "intervalNs", 64));
+  const window = BigInt(
+    canonicalDecimal(draft.workWindowNs, "workWindowNs", 64),
+  );
   if (window > interval)
     throw new Error("workWindowNs: cannot exceed intervalNs");
+  if (start + window > U64_MAX)
+    throw new Error("startAtNs + workWindowNs: overflow");
   return {
     dao_account_id: draft.daoAccountId,
     title: draft.title,
     description: draft.description,
-    start_at_ns: canonicalDecimal(draft.startAtNs, "startAtNs", true),
+    start_at_ns: draft.startAtNs,
     interval_ns: draft.intervalNs,
     work_window_ns: draft.workWindowNs,
     claim_duration_ns: canonicalDecimal(
       draft.claimDurationNs,
       "claimDurationNs",
+      64,
     ),
-    amount_yocto: canonicalDecimal(draft.amountYocto, "amountYocto"),
+    amount_yocto: canonicalDecimal(draft.amountYocto, "amountYocto", 128),
   };
 }
 
@@ -80,12 +117,16 @@ export function createTemplateIntent(
   storageDepositYocto: string,
 ): TransactionIntent {
   const input = toTemplateInput(draft);
-  canonicalDecimal(storageDepositYocto, "storageDepositYocto");
+  const deposit = minimumDeposit(
+    storageDepositYocto,
+    TEMPLATE_MIN_DEPOSIT_YOCTO,
+    "storageDepositYocto",
+  );
   return {
     receiverId: registryAccountId ?? "",
     method: "create_template",
     args: { input },
-    attachedDepositYocto: storageDepositYocto,
+    attachedDepositYocto: deposit,
     network: "TESTNET",
     signingEnabled: false,
     disabledReason: registryAccountId
@@ -101,14 +142,20 @@ export function templateActionIntent(
   active?: boolean,
   storageDepositYocto = "0",
 ): TransactionIntent {
-  canonicalDecimal(templateId, "templateId", true);
-  canonicalDecimal(
-    storageDepositYocto,
-    "storageDepositYocto",
-    method === "set_template_active",
-  );
+  canonicalDecimal(templateId, "templateId", 64, true);
   if (method === "set_template_active" && typeof active !== "boolean") {
     throw new Error("active: boolean required");
+  }
+  const deposit =
+    method === "set_template_active"
+      ? canonicalDecimal(storageDepositYocto, "storageDepositYocto", 128, true)
+      : minimumDeposit(
+          storageDepositYocto,
+          CYCLE_MIN_DEPOSIT_YOCTO,
+          "storageDepositYocto",
+        );
+  if (method === "set_template_active" && deposit !== "0") {
+    throw new Error("storageDepositYocto: pause/resume requires zero deposit");
   }
   return {
     receiverId: registryAccountId ?? "",
@@ -117,8 +164,7 @@ export function templateActionIntent(
       method === "set_template_active"
         ? { template_id: templateId, active }
         : { template_id: templateId },
-    attachedDepositYocto:
-      method === "set_template_active" ? "0" : storageDepositYocto,
+    attachedDepositYocto: deposit,
     network: "TESTNET",
     signingEnabled: false,
     disabledReason: registryAccountId
