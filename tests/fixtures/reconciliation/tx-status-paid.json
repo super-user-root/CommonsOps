@@ -1,0 +1,221 @@
+{
+  "jsonrpc": "2.0",
+  "id": "commonsops:tx_status",
+  "result": {
+    "final_execution_status": "FINAL",
+    "status": { "SuccessValue": "" },
+    "transaction": {
+      "actions": [
+        {
+          "FunctionCall": {
+            "args": "eyJpZCI6NzcsImFjdGlvbiI6IlZvdGVBcHByb3ZlIn0=",
+            "deposit": "0",
+            "gas": 150000000000000,
+            "method_name": "act_proposal"
+          }
+        }
+      ],
+      "hash": "6uzuBipBzBod3BcjGW3mz5dgXRd3ujforNw2k7YVvmug",
+      "nonce": 90758355000177,
+      "priority_fee": 0,
+      "public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp",
+      "receiver_id": "dao.example.testnet",
+      "signature": "ed25519:5hYH36XBboaidJx9c6w4u5okyejwTb17JPKMxGZGojYW2RuhUo8otjnVBZ732Yy25N56CXbScmEC2tai9pd6KUJ9",
+      "signer_id": "alice.example.testnet"
+    },
+    "transaction_outcome": {
+      "block_hash": "7hAMHttWdpjtiVVVzqQwZ9ac2uWCrquH98jt5fXc9okb",
+      "id": "6uzuBipBzBod3BcjGW3mz5dgXRd3ujforNw2k7YVvmug",
+      "outcome": {
+        "executor_id": "alice.example.testnet",
+        "gas_burnt": 2428019381096,
+        "logs": [],
+        "metadata": { "gas_profile": null, "version": 1 },
+        "receipt_ids": ["EXXtTcFksfrvuPbWYW32MEEvuxFLFiNJA9267CJca6f"],
+        "status": {
+          "SuccessReceiptId": "EXXtTcFksfrvuPbWYW32MEEvuxFLFiNJA9267CJca6f"
+        },
+        "tokens_burnt": "242801938109600000000"
+      },
+      "proof": []
+    },
+    "receipts": [
+      {
+        "predecessor_id": "alice.example.testnet",
+        "priority": 0,
+        "receipt": {
+          "Action": {
+            "actions": [
+              {
+                "FunctionCall": {
+                  "args": "eyJpZCI6NzcsImFjdGlvbiI6IlZvdGVBcHByb3ZlIn0=",
+                  "deposit": "0",
+                  "gas": 150000000000000,
+                  "method_name": "act_proposal"
+                }
+              }
+            ],
+            "gas_price": "250008035",
+            "input_data_ids": [],
+            "is_promise_yield": false,
+            "output_data_receivers": [],
+            "signer_id": "alice.example.testnet",
+            "signer_public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp"
+          }
+        },
+        "receipt_id": "EXXtTcFksfrvuPbWYW32MEEvuxFLFiNJA9267CJca6f",
+        "receiver_id": "dao.example.testnet"
+      },
+      {
+        "predecessor_id": "dao.example.testnet",
+        "priority": 0,
+        "receipt": {
+          "Action": {
+            "actions": [
+              { "Transfer": { "deposit": "19000000000000000000000" } }
+            ],
+            "gas_price": "250008035",
+            "input_data_ids": [],
+            "is_promise_yield": false,
+            "output_data_receivers": [],
+            "signer_id": "alice.example.testnet",
+            "signer_public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp"
+          }
+        },
+        "receipt_id": "Dgb9CQfc8xEYhTDbwqvBxvNRCGBtwkQjBpGJqWpGCJMW",
+        "receiver_id": "alice.example.testnet"
+      },
+      {
+        "predecessor_id": "system",
+        "priority": 0,
+        "receipt": {
+          "Action": {
+            "actions": [{ "Transfer": { "deposit": "33479177646889687500" } }],
+            "gas_price": "0",
+            "input_data_ids": [],
+            "is_promise_yield": false,
+            "output_data_receivers": [],
+            "signer_id": "alice.example.testnet",
+            "signer_public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp"
+          }
+        },
+        "receipt_id": "HrwsCb81LMwkvWVvpmaPeTiE9etgTc1nrZkKjNmjiQjD",
+        "receiver_id": "alice.example.testnet"
+      },
+      {
+        "predecessor_id": "dao.example.testnet",
+        "priority": 0,
+        "receipt": {
+          "Action": {
+            "actions": [
+              { "Transfer": { "deposit": "5100000000000000000000000" } }
+            ],
+            "gas_price": "250008035",
+            "input_data_ids": [],
+            "is_promise_yield": false,
+            "output_data_receivers": [],
+            "signer_id": "alice.example.testnet",
+            "signer_public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp"
+          }
+        },
+        "receipt_id": "GEU8yPojva5caEpZCcpQ26zzydsasxgGQRv2BAqQZUdq",
+        "receiver_id": "alice.example.testnet"
+      },
+      {
+        "predecessor_id": "system",
+        "priority": 0,
+        "receipt": {
+          "Action": {
+            "actions": [{ "Transfer": { "deposit": "33479177646889687500" } }],
+            "gas_price": "0",
+            "input_data_ids": [],
+            "is_promise_yield": false,
+            "output_data_receivers": [],
+            "signer_id": "alice.example.testnet",
+            "signer_public_key": "ed25519:5FTfLUtjcUXNP9bRu8go3Qcv2kFKJJvMrEiZufLHDdmp"
+          }
+        },
+        "receipt_id": "F1gZJUbHuMLqJZ7in9VYs2MPD1wzR7BUnjFzeht4PqxP",
+        "receiver_id": "alice.example.testnet"
+      }
+    ],
+    "receipts_outcome": [
+      {
+        "block_hash": "8BWBafUewDYZf4a1UoXZJ1tCUVFKEWazsyFFVNnpJXDk",
+        "id": "EXXtTcFksfrvuPbWYW32MEEvuxFLFiNJA9267CJca6f",
+        "outcome": {
+          "executor_id": "dao.example.testnet",
+          "gas_burnt": 4562812612238,
+          "logs": [],
+          "metadata": { "gas_profile": null, "version": 1 },
+          "receipt_ids": [
+            "Dgb9CQfc8xEYhTDbwqvBxvNRCGBtwkQjBpGJqWpGCJMW",
+            "GEU8yPojva5caEpZCcpQ26zzydsasxgGQRv2BAqQZUdq",
+            "F1gZJUbHuMLqJZ7in9VYs2MPD1wzR7BUnjFzeht4PqxP"
+          ],
+          "status": {
+            "SuccessReceiptId": "GEU8yPojva5caEpZCcpQ26zzydsasxgGQRv2BAqQZUdq"
+          },
+          "tokens_burnt": "456281261223800000000"
+        },
+        "proof": []
+      },
+      {
+        "block_hash": "FfBBZxyHema5LXoLxKnyXDFAdtFb5geTSog3VQhdyWFV",
+        "id": "Dgb9CQfc8xEYhTDbwqvBxvNRCGBtwkQjBpGJqWpGCJMW",
+        "outcome": {
+          "executor_id": "alice.example.testnet",
+          "gas_burnt": 223182562500,
+          "logs": [],
+          "metadata": { "gas_profile": null, "version": 1 },
+          "receipt_ids": ["HrwsCb81LMwkvWVvpmaPeTiE9etgTc1nrZkKjNmjiQjD"],
+          "status": { "SuccessValue": "" },
+          "tokens_burnt": "22318256250000000000"
+        },
+        "proof": []
+      },
+      {
+        "block_hash": "9pf3Ywa1WY94umqUsL7FzqrkFiV7fgLUwjHhueJEL6dh",
+        "id": "HrwsCb81LMwkvWVvpmaPeTiE9etgTc1nrZkKjNmjiQjD",
+        "outcome": {
+          "executor_id": "alice.example.testnet",
+          "gas_burnt": 223182562500,
+          "logs": [],
+          "metadata": { "gas_profile": null, "version": 1 },
+          "receipt_ids": [],
+          "status": { "SuccessValue": "" },
+          "tokens_burnt": "22318256250000000000"
+        },
+        "proof": []
+      },
+      {
+        "block_hash": "7TGrboF8jPxEwFc4hVJdZr6482bJbNxNNQWz3pLDrA7U",
+        "id": "GEU8yPojva5caEpZCcpQ26zzydsasxgGQRv2BAqQZUdq",
+        "outcome": {
+          "executor_id": "alice.example.testnet",
+          "gas_burnt": 223182562500,
+          "logs": [],
+          "metadata": { "gas_profile": null, "version": 1 },
+          "receipt_ids": [],
+          "status": { "SuccessValue": "" },
+          "tokens_burnt": "22318256250000000000"
+        },
+        "proof": []
+      },
+      {
+        "block_hash": "3MZ5DPFFFB9MiWr32ufWJjyUEAhAL8yuCPzv8u1BwFQq",
+        "id": "F1gZJUbHuMLqJZ7in9VYs2MPD1wzR7BUnjFzeht4PqxP",
+        "outcome": {
+          "executor_id": "alice.example.testnet",
+          "gas_burnt": 223182562500,
+          "logs": [],
+          "metadata": { "gas_profile": null, "version": 1 },
+          "receipt_ids": [],
+          "status": { "SuccessValue": "" },
+          "tokens_burnt": "22318256250000000000"
+        },
+        "proof": []
+      }
+    ]
+  }
+}
