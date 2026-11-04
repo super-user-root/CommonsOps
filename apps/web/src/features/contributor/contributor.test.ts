@@ -90,8 +90,59 @@ test("rejects evidence bounds, overflow, zero and malformed values", async () =>
   );
 });
 
-test("creates exact zero-deposit claim, release and public-expiry ABI intents", () => {
-  const claimIntent = contributorCycleIntent(
+test("verifies supplied SUBMITTED evidence digest and rejects mismatches", async () => {
+  const submitted = cycle("SUBMITTED");
+  await assert.doesNotReject(
+    deriveContributorCycleView(submitted, "600", claimant),
+  );
+
+  const zeroDigest = cycle("SUBMITTED", {
+    evidence: {
+      ...submitted.evidence!,
+      digest_sha256: "0".repeat(64),
+    },
+  });
+  await assert.rejects(
+    deriveContributorCycleView(zeroDigest, "600", claimant),
+    /canonical contract evidence/,
+  );
+
+  const otherCanonical = `[1,"example","docs","43","${"ab".repeat(20)}"]`;
+  const otherDigest = createHash("sha256").update(otherCanonical).digest("hex");
+  const otherEvidenceDigest = cycle("SUBMITTED", {
+    evidence: {
+      ...submitted.evidence!,
+      digest_sha256: otherDigest,
+    },
+  });
+  await assert.rejects(
+    deriveContributorCycleView(otherEvidenceDigest, "600", claimant),
+    /canonical contract evidence/,
+  );
+});
+
+test("fails closed when Web Crypto is unavailable", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: undefined,
+  });
+  try {
+    await assert.rejects(
+      normalizeGithubEvidence(draft),
+      /ERR_SHA256_UNAVAILABLE/,
+    );
+    await assert.rejects(
+      deriveContributorCycleView(cycle("SUBMITTED"), "600", claimant),
+      /ERR_SHA256_UNAVAILABLE/,
+    );
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "crypto", descriptor);
+  }
+});
+
+test("creates exact zero-deposit claim, release and public-expiry ABI intents", async () => {
+  const claimIntent = await contributorCycleIntent(
     null,
     "claim_cycle",
     cycle("OPEN"),
@@ -110,7 +161,7 @@ test("creates exact zero-deposit claim, release and public-expiry ABI intents", 
       "No reviewed testnet registry deployment is configured. Wallet connector is not configured.",
   });
 
-  const releaseIntent = contributorCycleIntent(
+  const releaseIntent = await contributorCycleIntent(
     "registry.testnet",
     "release_claim",
     cycle("CLAIMED"),
@@ -128,7 +179,7 @@ test("creates exact zero-deposit claim, release and public-expiry ABI intents", 
     "Wallet connector is not configured.",
   );
 
-  const expiryIntent = contributorCycleIntent(
+  const expiryIntent = await contributorCycleIntent(
     "registry.testnet",
     "expire_cycle_or_claim",
     cycle("CLAIMED"),
@@ -223,13 +274,17 @@ test("requires active claimant and strict claim/work deadlines for evidence", as
   assert.match(deadlineBound.intent.disabledReason, /work deadline/);
 });
 
-test("enforces immutable claimant-to-recipient binding", () => {
-  const claimed = deriveContributorCycleView(cycle("CLAIMED"), "499", claimant);
+test("enforces immutable claimant-to-recipient binding", async () => {
+  const claimed = await deriveContributorCycleView(
+    cycle("CLAIMED"),
+    "499",
+    claimant,
+  );
   assert.equal(claimed.payoutRecipientId, claimant);
   assert.equal(claimed.cycle.claim?.claimant_id, claimed.payoutRecipientId);
   assert.equal(claimed.actions.release_claim.allowed, true);
 
-  assert.throws(() =>
+  await assert.rejects(
     deriveContributorCycleView(
       cycle("CLAIMED", {
         claim: {
@@ -243,22 +298,24 @@ test("enforces immutable claimant-to-recipient binding", () => {
     ),
   );
   assert.equal(
-    deriveContributorCycleView(cycle("OPEN"), "100", claimant)
+    (await deriveContributorCycleView(cycle("OPEN"), "100", claimant))
       .payoutRecipientId,
     null,
   );
 });
 
-test("derives OPEN, CLAIMED, stale, submitted, expired and cancelled lifecycles", () => {
+test("derives OPEN, CLAIMED, stale, submitted, expired and cancelled lifecycles", async () => {
   assert.equal(
-    deriveContributorCycleView(cycle("OPEN"), "100", claimant).lifecycle,
+    (await deriveContributorCycleView(cycle("OPEN"), "100", claimant))
+      .lifecycle,
     "OPEN",
   );
   assert.equal(
-    deriveContributorCycleView(cycle("CLAIMED"), "499", claimant).lifecycle,
+    (await deriveContributorCycleView(cycle("CLAIMED"), "499", claimant))
+      .lifecycle,
     "CLAIMED",
   );
-  const staleClaim = deriveContributorCycleView(
+  const staleClaim = await deriveContributorCycleView(
     cycle("CLAIMED"),
     "500",
     "settler.testnet",
@@ -267,7 +324,7 @@ test("derives OPEN, CLAIMED, stale, submitted, expired and cancelled lifecycles"
   assert.equal(staleClaim.actions.expire_cycle_or_claim.allowed, true);
   assert.equal(staleClaim.actions.submit_evidence.allowed, false);
 
-  const staleCycle = deriveContributorCycleView(
+  const staleCycle = await deriveContributorCycleView(
     cycle("OPEN"),
     "600",
     "settler.testnet",
@@ -276,21 +333,24 @@ test("derives OPEN, CLAIMED, stale, submitted, expired and cancelled lifecycles"
   assert.equal(staleCycle.actions.expire_cycle_or_claim.allowed, true);
 
   assert.equal(
-    deriveContributorCycleView(cycle("SUBMITTED"), "600", claimant).lifecycle,
+    (await deriveContributorCycleView(cycle("SUBMITTED"), "600", claimant))
+      .lifecycle,
     "SUBMITTED",
   );
   assert.equal(
-    deriveContributorCycleView(cycle("EXPIRED"), "600", claimant).lifecycle,
+    (await deriveContributorCycleView(cycle("EXPIRED"), "600", claimant))
+      .lifecycle,
     "EXPIRED",
   );
   assert.equal(
-    deriveContributorCycleView(cycle("CANCELLED"), "200", claimant).lifecycle,
+    (await deriveContributorCycleView(cycle("CANCELLED"), "200", claimant))
+      .lifecycle,
     "CANCELLED",
   );
 });
 
-test("does not fabricate contract settlement or permit premature public expiry", () => {
-  const stale = deriveContributorCycleView(
+test("does not fabricate contract settlement or permit premature public expiry", async () => {
+  const stale = await deriveContributorCycleView(
     cycle("CLAIMED"),
     "500",
     "settler.testnet",
@@ -298,7 +358,7 @@ test("does not fabricate contract settlement or permit premature public expiry",
   assert.equal(stale.registryStatus, "CLAIMED");
   assert.equal(stale.lifecycle, "STALE_CLAIM");
 
-  const early = contributorCycleIntent(
+  const early = await contributorCycleIntent(
     null,
     "expire_cycle_or_claim",
     cycle("CLAIMED"),
@@ -309,8 +369,8 @@ test("does not fabricate contract settlement or permit premature public expiry",
   assert.match(early.disabledReason, /Neither the claim nor work deadline/);
 });
 
-test("validates all u64 cycle and observation values without Number coercion", () => {
-  assert.doesNotThrow(() =>
+test("validates all u64 cycle and observation values without Number coercion", async () => {
+  await assert.doesNotReject(
     deriveContributorCycleView(
       cycle("OPEN", {
         key: { template_id: U64_MAX, period_index: U64_MAX },
@@ -322,11 +382,11 @@ test("validates all u64 cycle and observation values without Number coercion", (
     ),
   );
   for (const invalid of ["01", "-1", "1.5", U64_MAX + "0"]) {
-    assert.throws(() =>
+    await assert.rejects(
       deriveContributorCycleView(cycle("OPEN"), invalid, claimant),
     );
   }
-  assert.throws(() =>
+  await assert.rejects(
     deriveContributorCycleView(
       cycle("OPEN", {
         key: { template_id: U64_MAX + "0", period_index: "0" },

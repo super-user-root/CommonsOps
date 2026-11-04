@@ -113,8 +113,22 @@ function callerAvailability(
   return connectedAccountId ? available() : unavailable(unavailableReason);
 }
 
-function validateEvidenceRecord(evidence: Evidence) {
-  canonicalEvidenceBytes(
+async function sha256Hex(bytes: Uint8Array) {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("ERR_SHA256_UNAVAILABLE");
+  }
+  const canonicalBytes = Uint8Array.from(bytes);
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    canonicalBytes.buffer,
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+async function validateEvidenceRecord(evidence: Evidence) {
+  const canonicalBytes = canonicalEvidenceBytes(
     evidence.repository_owner,
     evidence.repository_name,
     evidence.pull_request_number,
@@ -129,7 +143,8 @@ function validateEvidenceRecord(evidence: Evidence) {
     evidence.repository_name !== repository ||
     evidence.commit_sha !== commit ||
     evidence.url !== url ||
-    !/^[a-f0-9]{64}$/.test(evidence.digest_sha256)
+    !/^[a-f0-9]{64}$/.test(evidence.digest_sha256) ||
+    evidence.digest_sha256 !== (await sha256Hex(canonicalBytes))
   ) {
     throw new Error("cycle.evidence: canonical contract evidence required");
   }
@@ -140,7 +155,7 @@ function validateEvidenceRecord(evidence: Evidence) {
   }
 }
 
-function validateCycle(cycle: Cycle): CycleKey {
+async function validateCycle(cycle: Cycle): Promise<CycleKey> {
   const key = canonicalCycleKey(cycle.key);
   const opensAt = canonicalInteger(cycle.opens_at_ns, "cycle.opens_at_ns", 64);
   const deadline = canonicalInteger(
@@ -216,7 +231,7 @@ function validateCycle(cycle: Cycle): CycleKey {
       if (!cycle.claim || !cycle.evidence || cycle.submitted_at_ns === null) {
         throw new Error("cycle: invalid SUBMITTED record");
       }
-      validateEvidenceRecord(cycle.evidence);
+      await validateEvidenceRecord(cycle.evidence);
       const submittedAt = canonicalInteger(
         cycle.submitted_at_ns,
         "cycle.submitted_at_ns",
@@ -254,12 +269,12 @@ function validateCycle(cycle: Cycle): CycleKey {
   return key;
 }
 
-export function deriveContributorCycleView(
+export async function deriveContributorCycleView(
   cycle: Cycle,
   observedBlockTimestampNs: string,
   connectedAccountId: string | null,
-): ContributorCycleView {
-  const key = validateCycle(cycle);
+): Promise<ContributorCycleView> {
+  const key = await validateCycle(cycle);
   const now = canonicalInteger(
     observedBlockTimestampNs,
     "observedBlockTimestampNs",
@@ -399,14 +414,14 @@ function transactionIntent(
   });
 }
 
-export function contributorCycleIntent(
+export async function contributorCycleIntent(
   reviewedRegistryAccountId: string | null,
   method: Exclude<ContributorMethod, "submit_evidence">,
   cycle: Cycle,
   observedBlockTimestampNs: string,
   connectedAccountId: string | null,
-): ContributorTransactionIntent {
-  const view = deriveContributorCycleView(
+): Promise<ContributorTransactionIntent> {
+  const view = await deriveContributorCycleView(
     cycle,
     observedBlockTimestampNs,
     connectedAccountId,
@@ -437,17 +452,7 @@ export async function normalizeGithubEvidence(
   ) {
     throw new Error("ERR_EVIDENCE_URL_TOO_LONG");
   }
-  if (!globalThis.crypto?.subtle) {
-    throw new Error("ERR_SHA256_UNAVAILABLE");
-  }
-  const canonicalBytes = Uint8Array.from(bytes);
-  const digest = await globalThis.crypto.subtle.digest(
-    "SHA-256",
-    canonicalBytes.buffer,
-  );
-  const digestSha256 = Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  const digestSha256 = await sha256Hex(bytes);
   return Object.freeze({
     repository_owner: owner,
     repository_name: repository,
@@ -465,7 +470,7 @@ export async function evidenceSubmissionPreview(
   connectedAccountId: string | null,
   draft: GithubEvidenceDraft,
 ): Promise<EvidenceSubmissionPreview> {
-  const view = deriveContributorCycleView(
+  const view = await deriveContributorCycleView(
     cycle,
     observedBlockTimestampNs,
     connectedAccountId,
