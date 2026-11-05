@@ -20,10 +20,22 @@ const BASE64_ALPHABET =
 export const MAX_SPUTNIK_PROPOSAL_DESCRIPTION_BYTES = 512;
 export const SPUTNIK_POLICY_RPC_ID = "commonsops:get_policy";
 
+// Payout graphs are pinned from observed real transactions, not assumed:
+// 2.0.0 paid with the payout Transfer as a direct child of the act receipt and
+// no callback receipt, while the observed factory-deployed 2.3.1 DAO keeps the
+// payout Transfer as a direct child of the act receipt but adds a sibling
+// on_proposal_callback FunctionCall receipt that does not gate PAID
+// derivation (verified against tests/fixtures/sputnik/
+// dao-proposal-0-231-paid.json). The 3.0.0 entry remains a placeholder for an
+// unobserved callback-gated graph and never verifies.
 export const pinnedSputnikProfiles = Object.freeze({
   "2.0.0": Object.freeze({
     codeHash: "ZGdM2TFdQpcXrxPxvq25514EViyi9xBSboetDiB3Uiq",
     payoutGraph: "DIRECT_CHILD_NO_CALLBACK" as const,
+  }),
+  "2.3.1": Object.freeze({
+    codeHash: "AA4nA45vauiac3jdVwJTzSdUP3oj2r1fDaPAb2mHdgcH",
+    payoutGraph: "DIRECT_CHILD_WITH_CALLBACK" as const,
   }),
   "3.0.0": Object.freeze({
     codeHash: null,
