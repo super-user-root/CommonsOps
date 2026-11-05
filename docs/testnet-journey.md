@@ -108,5 +108,7 @@ onchain, so the same evidence can never back a second cycle.
 node scripts/reconcile-live.mjs
 ```
 
-Read-only: the script signs nothing and spends nothing. Re-running yields the
-idempotent `IDEMPOTENT` status with the same record.
+Read-only: the script signs nothing and spends nothing. Each run re-derives
+the attribution from the live chain: `APPLIED`/`PAID` with the same record and
+an unchanged store fingerprint (`IDEMPOTENT` is the store-level status for
+re-applying an identical record within one store instance).
