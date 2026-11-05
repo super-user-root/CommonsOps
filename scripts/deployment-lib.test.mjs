@@ -154,6 +154,28 @@ test("transaction verifier accepts exact reviewed atomic receipt provenance", as
   assert.deepEqual(verified.receiptIds, ["6".repeat(44)]);
 });
 
+test("transaction verifier accepts the nearcore 32-byte code view and rejects other lengths", async () => {
+  // Current nearcore RPC transaction views replace the DeployContract code
+  // with a 32-byte internal identifier instead of echoing the full WASM.
+  const manifest = createDeploymentManifest(input);
+  manifest.transactionHash = "4".repeat(44);
+  manifest.status = "DEPLOYED";
+  const verified = verifyDeploymentTransaction(
+    manifest,
+    fakeTransaction(manifest, Buffer.alloc(32, 1)),
+  );
+  assert.equal(verified.transactionHash, "4".repeat(44));
+  assert.deepEqual(verified.receiptIds, ["6".repeat(44)]);
+  for (const length of [0, 1, 31, 33, 261_225, 261_227]) {
+    assert.throws(() =>
+      verifyDeploymentTransaction(
+        manifest,
+        fakeTransaction(manifest, Buffer.alloc(length, 1)),
+      ),
+    );
+  }
+});
+
 test("transaction verifier rejects mismatched transaction identity and unknown outcomes", async () => {
   const code = await readFile(
     path.resolve(
