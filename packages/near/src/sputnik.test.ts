@@ -201,3 +201,129 @@ test("fails closed for incomplete and ambiguous receipt graphs", async () => {
     "AMBIGUOUS",
   );
 });
+
+// Real testnet capture of commonsops-dao.sputnikv2.testnet proposal 0
+// (Sputnik 2.3.1, code hash pinned in pinnedSputnikProfiles): the payout
+// Transfer is a direct child of the act receipt and a sibling
+// on_proposal_callback FunctionCall receipt exists but does not gate PAID.
+const expected231: ExpectedNativePayment = {
+  network: "testnet",
+  daoAccountId: "commonsops-dao.sputnikv2.testnet",
+  proposalId: "0",
+  recipientId: "commonsops.testnet",
+  amountYocto: "500000000000000000000000",
+  version: "2.3.1",
+  codeHash: "AA4nA45vauiac3jdVwJTzSdUP3oj2r1fDaPAb2mHdgcH",
+};
+
+const proposal231 = {
+  id: 0,
+  status: "Approved",
+  kind: {
+    Transfer: {
+      token_id: "",
+      receiver_id: "commonsops.testnet",
+      amount: "500000000000000000000000",
+      msg: null,
+    },
+  },
+};
+
+test("verifies the real 2.3.1 proposal 0 native NEAR payout", async () => {
+  const result = verifyNativeSputnikPayment(
+    expected231,
+    proposal231,
+    await fixture("dao-proposal-0-231-paid.json"),
+  );
+  assert.deepEqual(result, {
+    state: "PAID",
+    reason: "Verified one successful causal native NEAR payout",
+    transactionHash: "ApRvPUsw2d5gn3N4SxTe7Wbv7nPcJRDTtWc7j9LwAoP7",
+    actionReceiptId: "kBH4oqQh8mMy6oGW727XZmQgVobUv1r8r11ExMrsPro",
+    payoutReceiptId: "EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2",
+    evidenceKey:
+      "testnet:commonsops-dao.sputnikv2.testnet:0:kBH4oqQh8mMy6oGW727XZmQgVobUv1r8r11ExMrsPro:EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2",
+    blockHash: "5ukLMpiXjTW9y9bojhM2cPRgD25v9fMa7MkKxFat1Se6",
+  });
+});
+
+test("2.3.1 payout rejects wrong proposal, amount and recipient", async () => {
+  const paid = await fixture("dao-proposal-0-231-paid.json");
+  assert.equal(
+    verifyNativeSputnikPayment(
+      { ...expected231, proposalId: "1" },
+      proposal231,
+      paid,
+    ).state,
+    "INVALID",
+  );
+  assert.equal(
+    verifyNativeSputnikPayment(
+      {
+        ...expected231,
+        amountYocto: "200864306250000000000",
+      },
+      proposal231,
+      paid,
+    ).state,
+    "INVALID",
+    "a sibling zero-deposit transfer is also causal and DAO-signed, so proposal-kind matching is required by the caller before adapter verification",
+  );
+  assert.equal(
+    verifyNativeSputnikPayment(
+      { ...expected231, recipientId: "other.testnet" },
+      proposal231,
+      paid,
+    ).state,
+    "INVALID",
+  );
+});
+
+test("2.3.1 unsupported profile and codeHash mismatches stay unknown", async () => {
+  const paid = await fixture("dao-proposal-0-231-paid.json");
+  assert.equal(
+    verifyNativeSputnikPayment(
+      { ...expected231, codeHash: "unsupported" },
+      proposal231,
+      paid,
+    ).state,
+    "UNKNOWN",
+  );
+  assert.equal(
+    verifyNativeSputnikPayment(
+      { ...expected231, version: "2.0.0" },
+      proposal231,
+      paid,
+    ).state,
+    "UNKNOWN",
+  );
+  assert.equal(
+    verifyNativeSputnikPayment(
+      { ...expected231, version: "3.0.0" },
+      proposal231,
+      paid,
+    ).state,
+    "UNKNOWN",
+    "the 3.0.0 placeholder pins a null code hash and never verifies",
+  );
+});
+
+test("2.3.1 sibling on_proposal_callback outcome does not gate PAID", async () => {
+  const paid = await fixture("dao-proposal-0-231-paid.json");
+  const callbackId = "H7Uu9meqBeux4eeNa3DhcWBnEYzVCdTy5Jmu7iT4pugD";
+  const failedCallback = structuredClone(paid);
+  failedCallback.result.receipts_outcome.find(
+    (entry: { id: string }) => entry.id === callbackId,
+  ).outcome.status = { Failure: { error_message: "callback failed" } };
+  const result = verifyNativeSputnikPayment(
+    expected231,
+    proposal231,
+    failedCallback,
+  );
+  assert.equal(result.state, "PAID");
+  assert.equal(
+    result.payoutReceiptId,
+    "EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2",
+    "a failed sibling callback is not yet modeled as FAILED; the payout child alone derives PAID for the pinned 2.3.1 graph",
+  );
+});
