@@ -1,0 +1,210 @@
+{
+  "$schema": "CommonsOps P3-T06 live end-to-end results; public onchain data only",
+  "schemaVersion": 1,
+  "task": "P3-T06",
+  "network": "testnet",
+  "registry": "commonsops.testnet",
+  "dao": "commonsops-dao.sputnikv2.testnet",
+  "runner": "scripts/e2e-live.mjs --execute (gated by --execute AND COMMONSOPS_E2E_KEY=1); signing performed only by the `near` CLI (near-cli-rs 0.30.1, sign-with-keychain, OS keychain); the committed script holds no keys and signs nothing",
+  "authorization": "Testnet signing for this journey pre-authorized by the project owner; the demo-template deviation (template 1 in place of template 0 period 1, which is not due until 2026-11-12T20:23:03Z) was coordinator-approved in the current session",
+  "executedAtUtc": "2026-11-05T22:17Z-23:05Z across five gated runs plus two single-call probes; see runs[] for per-run preflight times",
+  "runs": [
+    {
+      "id": "runA",
+      "preflightStartAtNs": "1793917062228410000",
+      "outcome": "step 2 create_template succeeded; steps 1/4/5/6 executed onchain and failed with the trap string (near-cli-rs 0.30.1 exposes no tx hash on failed sends, so those hashes are uncaptured); step 3 materialize was rejected client-side with 'Error: Transaction has expired.' (stale block hash) and never executed"
+    },
+    {
+      "id": "probeB",
+      "outcome": "single duplicate-claim control probe at the journey's 50 Tgas; same trap string; proves gas is not a factor"
+    },
+    {
+      "id": "runC",
+      "preflightStartAtNs": "1793918111066656000",
+      "outcome": "step 1 control failed onchain (hash captured via --teach-me); step 3 materialize succeeded; step 6 link attempt executed against cycle 1:0 while still OPEN and failed onchain (ERR_CYCLE_NOT_SUBMITTED path); steps 4/5 intentionally not yet due in that run's ordering"
+    },
+    {
+      "id": "runD",
+      "preflightStartAtNs": "1793919084233884400",
+      "outcome": "step 1 control failed onchain; step 4 claim of cycle 1:0 was sent and succeeded but the run was interrupted before the CLI printed the hash; the nonce sequence proves exactly one consumed nonce between the surrounding captured transactions"
+    },
+    {
+      "id": "runE",
+      "preflightStartAtNs": "1793919377519929600",
+      "outcome": "step 1 control failed onchain; step 5 submit_evidence succeeded; step 6 link_proposal replay control failed onchain; the final summary print aborted on an RPC HTTP 429, so per-tx evidence was collected directly from EXPERIMENTAL_tx_status"
+    }
+  ],
+  "transactions": [
+    {
+      "label": "runA step2 create_template (template 1, demonstration economics)",
+      "method": "create_template",
+      "txHash": "5qp5yqhPt6taGxp3ho3jZ7MBk7d2XAkYFR9K7Lh3jPhV",
+      "nonce": 276384918000014,
+      "attachedDeposit": "40960000000000000000000 yoctoNEAR",
+      "gas": "100 TeraGas",
+      "result": "success",
+      "exactError": null
+    },
+    {
+      "label": "probeB duplicate-claim control on cycle 0:0 (SUBMITTED) at journey gas",
+      "method": "claim_cycle",
+      "txHash": "3VSGGKe3nzV3wHE1spXCktBUe89ijmSHYUiSjjVr6oJn",
+      "attachedDeposit": "0 NEAR",
+      "gas": "50 TeraGas",
+      "result": "rejected onchain",
+      "exactError": "WebAssembly trap: An `unreachable` opcode was executed."
+    },
+    {
+      "label": "runC duplicate-claim control on cycle 0:0 (SUBMITTED)",
+      "method": "claim_cycle",
+      "txHash": "48EUXEz9WEwZxvPppaDqTRE1uu49zzckg8g2NnQydkY7",
+      "nonce": 276384918000020,
+      "attachedDeposit": "0 NEAR",
+      "gas": "100 TeraGas",
+      "result": "rejected onchain",
+      "exactError": "WebAssembly trap: An `unreachable` opcode was executed."
+    },
+    {
+      "label": "runC step3 materialize_cycle template 1 -> cycle 1:0 OPEN",
+      "method": "materialize_cycle",
+      "txHash": "J3L8J9yXDVkxwfbyASxFuYng1TR1JuXZpeN8ycZgbfPk",
+      "nonce": 276384918000021,
+      "attachedDeposit": "163840000000000000000000 yoctoNEAR",
+      "gas": "100 TeraGas",
+      "result": "success",
+      "exactError": null
+    },
+    {
+      "label": "runC link attempt while cycle 1:0 was OPEN (wrong-state guard)",
+      "method": "link_proposal",
+      "txHash": "D32HwHZPJFheeahnpTSxGLYTfDuEspZi8yyRBBCBN55D",
+      "nonce": 276384918000022,
+      "attachedDeposit": "0 NEAR",
+      "gas": "100 TeraGas",
+      "result": "rejected onchain",
+      "exactError": "WebAssembly trap: An `unreachable` opcode was executed."
+    },
+    {
+      "label": "runD duplicate-claim control on cycle 0:0 (SUBMITTED)",
+      "method": "claim_cycle",
+      "txHash": "DjVs2uopWUJs1Eb5fWorDSmcoQbksmK3zqafsfJfojCh",
+      "nonce": 276384918000023,
+      "attachedDeposit": "0 NEAR",
+      "gas": "100 TeraGas",
+      "result": "rejected onchain",
+      "exactError": "WebAssembly trap: An `unreachable` opcode was executed."
+    },
+    {
+      "label": "runD step4 claim_cycle cycle 1:0 (executed, state OPEN->CLAIMED; hash not captured - interrupted run, nonce 276384918000024 consumed between surrounding captured transactions)",
+      "method": "claim_cycle",
+      "txHash": null,
+      "nonce": 276384918000024,
+      "attachedDeposit": "0 NEAR",
+      "gas": "100 TeraGas",
+      "result": "success (onchain state transition evidenced)",
+      "exactError": null
+    },
+    {
+      "label": "runE duplicate-claim control on cycle 0:0 (SUBMITTED) - recorded control",
+      "method": "claim_cycle",
+      "txHash": "GKfq7Jmda62CaEXYsHfmTqoNiCyJZ41wZd22cCwak1a1",
+      "nonce": 276384918000025,
+      "attachedDeposit": "0 NEAR",
+      "gas": "100 TeraGas",
+      "result": "rejected onchain",
+      "exactError": "WebAssembly trap: An `unreachable` opcode was executed."
+    },
+    {
+      "label": "runE step5 submit_evidence cycle 1:0 (PR 17 + commit 1032733c...)",
+      "method": "submit_evidence",
+      "txHash": "342Vft1zck7WwtmVuy6KUHcT85fsSf52zGbHVpAKuU1j",
+      "nonce": 276384918000026,
+      "attachedDeposit": "0 NEAR",
+      "gas": "100 TeraGas",
+      "result": "success",
+      "exactError": null
+    },
+    {
+      "label": "runE step6 link_proposal cycle 1:0 + proposal 0 (replay-reuse control) - recorded control",
+      "method": "link_proposal",
+      "txHash": "9wd9JoWorr9UcfpDse5nRCig43Nq9S64nDWqZymz6KVR",
+      "nonce": 276384918000027,
+      "attachedDeposit": "0 NEAR",
+      "gas": "100 TeraGas",
+      "result": "rejected onchain",
+      "exactError": "WebAssembly trap: An `unreachable` opcode was executed."
+    }
+  ],
+  "uncapturedExecutions": [
+    "runA steps 1/4/5/6 (claim_cycle 0:0, claim_cycle 1:0, submit_evidence 1:0, link_proposal 1:0): executed and rejected onchain with the trap string; near-cli-rs 0.30.1 prints no transaction hash on failed sends and --teach-me was not yet enabled for that run; all four left no state (claim 1:0/submit/link against a not-yet-materialized cycle).",
+    "runA step 3 materialize_cycle: rejected before broadcast ('Error: Transaction has expired.'), no hash, no onchain effect.",
+    "runD step 4 claim_cycle cycle 1:0: success; hash not printed before the interrupted run was stopped; consumed nonce 276384918000024 proves the single uncaptured transaction; the OPEN->CLAIMED state transition is evidenced by the surrounding captured transactions and the final onchain state."
+  ],
+  "controls": {
+    "duplicateClaim": {
+      "attemptedMethod": "claim_cycle",
+      "cycle": { "template_id": "0", "period_index": "0" },
+      "cycleStatusAtAttempt": "SUBMITTED",
+      "abiExpectedPanic": "ERR_CYCLE_NOT_OPEN",
+      "briefExpectedPanic": "ERR_CYCLE_NOT_CLAIMED",
+      "observedExactError": "WebAssembly trap: An `unreachable` opcode was executed.",
+      "rejectedOnchain": true,
+      "stateChange": "none (cycle 0:0 remains SUBMITTED with its proposal link intact)",
+      "recordedTxHash": "GKfq7Jmda62CaEXYsHfmTqoNiCyJZ41wZd22cCwak1a1"
+    },
+    "proposalReuse": {
+      "attemptedMethod": "link_proposal",
+      "cycle": { "template_id": "1", "period_index": "0" },
+      "proposalId": "0",
+      "cycleStatusAtAttempt": "SUBMITTED",
+      "abiExpectedPanic": "ERR_PROPOSAL_REPLAY",
+      "observedExactError": "WebAssembly trap: An `unreachable` opcode was executed.",
+      "rejectedOnchain": true,
+      "stateChange": "none (proposal 0 remains linked to cycle 0:0 only; cycle 1:0 remains unlinked)",
+      "recordedTxHash": "9wd9JoWorr9UcfpDse5nRCig43Nq9S64nDWqZymz6KVR"
+    }
+  },
+  "finalState": {
+    "cycle_0_0": {
+      "status": "SUBMITTED",
+      "proposal_link": {
+        "network": "TESTNET",
+        "dao_account_id": "commonsops-dao.sputnikv2.testnet",
+        "proposal_id": "0"
+      }
+    },
+    "cycle_1_0": {
+      "status": "SUBMITTED",
+      "claim": {
+        "claimant_id": "commonsops.testnet",
+        "payout_recipient_id": "commonsops.testnet"
+      },
+      "evidence": {
+        "repository_owner": "super-user-root",
+        "repository_name": "commonsops",
+        "pull_request_number": "17",
+        "url": "https://github.com/super-user-root/commonsops/pull/17",
+        "commit_sha": "1032733c2115b9e9c038d50617f6e151ac8bd59d"
+      },
+      "proposal_link": null
+    },
+    "proposal_0_linked_cycle": { "template_id": "0", "period_index": "0" },
+    "balances": {
+      "commonsops.testnet": {
+        "amountYocto": "3463803828735567700000000",
+        "lockedYocto": "0"
+      },
+      "commonsops-dao.sputnikv2.testnet": {
+        "amountYocto": "6500000000000000000000000",
+        "lockedYocto": "0"
+      }
+    },
+    "balanceNote": "The DAO balance is unchanged and the registry account balance decreased only by burned gas (~0.0029 NEAR across all runs): both storage deposits (0.04096 + 0.16384 NEAR) transfer to the contract account, which is commonsops.testnet itself, so they are internal and refundable by contract rules. No unexpected transfers."
+  },
+  "limitations": [
+    "The deployed contract (wasm sha256 9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c, byte-identical to the reviewed repo build) surfaces every failing assert/expect path as 'WebAssembly trap: An `unreachable` opcode was executed.' instead of the ABI assert strings; Rust panics compiled with panic=abort become wasm `unreachable` traps unless the panic goes through the env::panic_str host path. Onchain rejection semantics are unaffected: failing action receipts revert all state, verified by the unchanged cycle/proposal-link state after every control.",
+    "Template 0 period 1 is contractually not due until 2026-11-12T20:23:03Z (start_at_ns 1793910183011867400 + 604800000000000 interval); materialize_cycle for it would panic ERR_PERIOD_NOT_DUE. The coordinator approved the demonstration template 1 (same DAO, amount, cadence; start_at_ns = now) so the full second-cycle sequence and the replay-reuse control could be demonstrated in this session.",
+    "near-cli-rs 0.30.1 prints no transaction hash on failed sends; --teach-me verbose capture was added to the runner to recover hashes. Five onchain executions (four runA trap rejections and the runD claim success) remain uncaptured by hash; the consumed-nonce sequence (276384918000014..276384918000027) accounts for every transaction.",
+    "The task brief's expected panic strings (ERR_CYCLE_NOT_CLAIMED for claim_cycle, ERR_PROPOSAL_REPLAY for link_proposal) were not observed verbatim: claim_cycle on a SUBMITTED cycle asserts ERR_CYCLE_NOT_OPEN per the ABI (ERR_CYCLE_NOT_CLAIMED belongs to release_claim/submit_evidence), and the deployed build traps before the assert strings surface. Both controls still demonstrate the onchain rejection with no state change."
+  ]
+}

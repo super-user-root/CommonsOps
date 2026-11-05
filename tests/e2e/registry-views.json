@@ -1,0 +1,96 @@
+{
+  "$schema": "CommonsOps P3-T06 recorded read-only registry views; public onchain data only",
+  "schemaVersion": 1,
+  "network": "testnet",
+  "registryAccountId": "commonsops.testnet",
+  "rpcEndpoint": "https://rpc.testnet.near.org",
+  "capturedAtUtc": "2026-11-05T21:53:26.579Z",
+  "requestType": "query/call_function",
+  "finality": "final",
+  "block": {
+    "height": 276399186,
+    "timestampNs": 1793915592888819700,
+    "isoUtc": "2026-11-05T21:53:12.888Z"
+  },
+  "views": {
+    "get_template_0": {
+      "method": "get_template",
+      "args": {
+        "template_id": "0"
+      },
+      "result": {
+        "id": "0",
+        "manager_id": "commonsops.testnet",
+        "input": {
+          "dao_account_id": "commonsops-dao.sputnikv2.testnet",
+          "title": "Public documentation maintenance",
+          "description": "Recurring maintenance of the CommonsOps public documentation: review and merge community pull requests.",
+          "start_at_ns": "1793910183011867400",
+          "interval_ns": "604800000000000",
+          "work_window_ns": "432000000000000",
+          "claim_duration_ns": "172800000000000",
+          "amount_yocto": "500000000000000000000000"
+        },
+        "active": true,
+        "next_period_index": "1",
+        "created_at_ns": "1793910643118147928"
+      }
+    },
+    "get_cycle_0_0": {
+      "method": "get_cycle",
+      "args": {
+        "cycle_key": {
+          "template_id": "0",
+          "period_index": "0"
+        }
+      },
+      "result": {
+        "key": {
+          "template_id": "0",
+          "period_index": "0"
+        },
+        "status": "SUBMITTED",
+        "opens_at_ns": "1793910183011867400",
+        "deadline_at_ns": "1794342183011867400",
+        "dao_account_id": "commonsops-dao.sputnikv2.testnet",
+        "amount_yocto": "500000000000000000000000",
+        "claim": {
+          "claimant_id": "commonsops.testnet",
+          "payout_recipient_id": "commonsops.testnet",
+          "expires_at_ns": "1794083472509596599"
+        },
+        "evidence": {
+          "repository_owner": "super-user-root",
+          "repository_name": "commonsops",
+          "pull_request_number": "17",
+          "url": "https://github.com/super-user-root/commonsops/pull/17",
+          "commit_sha": "1032733c2115b9e9c038d50617f6e151ac8bd59d",
+          "digest_sha256": "09936627004b6e19664173302ff9d52613f5febef27ab34cfa488b54b83d71b8"
+        },
+        "submitted_at_ns": "1793910689442132732",
+        "proposal_link": {
+          "key": {
+            "network": "TESTNET",
+            "dao_account_id": "commonsops-dao.sputnikv2.testnet",
+            "proposal_id": "0"
+          },
+          "linked_at_ns": "1793910838179857287"
+        }
+      }
+    },
+    "get_proposal_cycle_0": {
+      "method": "get_proposal_cycle",
+      "args": {
+        "proposal_key": {
+          "network": "TESTNET",
+          "dao_account_id": "commonsops-dao.sputnikv2.testnet",
+          "proposal_id": "0"
+        }
+      },
+      "result": {
+        "template_id": "0",
+        "period_index": "0"
+      }
+    }
+  }
+}
