@@ -9,6 +9,7 @@ export function StatePatternGallery({ patterns }: StatePatternGalleryProps) {
     <section
       className="state-gallery section-shell"
       id="state-handling"
+      tabIndex={-1}
       aria-labelledby="state-handling-heading"
     >
       <div className="section-intro split-intro">

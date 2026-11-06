@@ -2,7 +2,7 @@
   color-scheme: light;
   --ink: #142f27;
   --ink-soft: #29463d;
-  --muted: #596c64;
+  --muted: #4c5f57;
   --paper: #f7f5ed;
   --surface: #fffdf7;
   --surface-strong: #ffffff;
@@ -1058,6 +1058,12 @@ footer {
     flex-direction: column;
     gap: 5px;
   }
+}
+
+main:focus,
+.journey-stage:focus,
+.state-gallery:focus {
+  outline: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
