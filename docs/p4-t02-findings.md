@@ -263,13 +263,12 @@ impact; not a release blocker).** `tests/run.mjs` `lint()` invokes
 `pnpm exec prettier --check` with the absolute paths of all 78 tracked source
 files on one command line. On Windows the prettier shim chain (pnpm →
 `prettier.cmd` → cmd.exe) hits the cmd.exe 8191-character command-line limit
-once the checkout directory is deep: measured, the full 78-file list at
-`C:\Users\tonym\AppData\Local\Temp\p4t02-clone-20261106T054351\repo` builds a
-7,416-character argument string and fails with "The command line is too long.",
-while 65 files (6,617 characters) pass and the identical full list at the
-shorter worktree path (`T:\findings\CommonsOps\worktrees\P4-T02`, 5,640
-characters) passes. Cloning to a short path (as the §2 proof does, from the
-same `TEMP` root) avoids it entirely.
+once the checkout directory is deep: measured, the full 78-file list with a
+deep TEMP clone as the checkout root builds a 7,416-character argument string
+and fails with "The command line is too long.", while 65 files (6,617
+characters) pass and the identical full list with a short checkout root as the
+working directory (5,640-character argument string) passes. Cloning to a short
+path (as the §2 proof does, from the same `TEMP` root) avoids it entirely.
 
 Characterization: environment-only, fail-visible (the harness aborts loudly
 rather than skipping checks), Linux CI is unaffected (no cmd.exe, and GitHub
