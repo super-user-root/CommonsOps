@@ -1,0 +1,21 @@
+{
+  "network": "testnet",
+  "rpcUrl": "https://rpc.testnet.near.org",
+  "accountId": "commonsops.testnet",
+  "sourceHead": "4145546fa4181b2e08c29fa78056bb266a5501cb",
+  "transactionHash": "DTkNwnhsF73z4umYgSQgauCLdpPzgtnxeuTb7TE5Dd7R",
+  "receiptIds": [
+    "BWdoEsMuBteB3gpo8ZiQ27oXguSLKZUwLjh6wyZV2YBY",
+    "AfQXPKpb6mV6agZE9vjfTE2eyRv5ZbtKd4EMEpvXYBnx"
+  ],
+  "pinnedBlockHash": "8Ajt9XEfAJVjiSFTo2aTPALWQsZkDpNr4x575BV4uobA",
+  "pinnedBlockHeight": 276385914,
+  "preCodeHash": "11111111111111111111111111111111",
+  "postCodeHash": "Avdrs3wmsssxb3nDDAJsMyFqc137NaSSpF4JNuXGP4zP",
+  "wasmSha256": "9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c",
+  "wasmBytes": 261226,
+  "storageUsage": 261511,
+  "amount": "9931831644455389400000000",
+  "locked": "0",
+  "foundationStatus": "foundation: no business behavior"
+}
