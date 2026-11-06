@@ -100,7 +100,10 @@ fingerprinted store.
 `Approved` alone was never treated as payment: PAID is derived here from the
 finalized causal receipt graph, matching the registry-linked DAO, proposal id,
 recipient, and exact integer amount — and the proposal link above is one-time
-onchain, so the same evidence can never back a second cycle.
+onchain, so the same evidence can never back a second cycle. The local store
+snapshot and its fingerprint are an advisory integrity aid only (they detect
+local tampering, not forgery): the authoritative evidence remains the finalized
+receipt graph above and the one-time onchain proposal link.
 
 ## Reproduce
 
