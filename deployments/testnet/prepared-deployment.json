@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 2,
+  "status": "DEPLOYED",
+  "network": "testnet",
+  "rpcUrl": "https://rpc.testnet.near.org",
+  "contractAccountId": "commonsops.testnet",
+  "managerAccountId": "commonsops.testnet",
+  "signerAccountId": "commonsops.testnet",
+  "signerPublicKey": "ed25519:HDMbog4TVvtNoh4XMZqfiD4R5h4uLumRcwgNvQyuwq39",
+  "sourceHead": "4145546fa4181b2e08c29fa78056bb266a5501cb",
+  "reviewedSourceHead": "27b631a15745859b92572349d60425dd2d1a6ed9",
+  "contractTree": "979db78a521e045676db8dd0564b8d17d24ab8bc",
+  "artifactPath": "deployments/testnet/artifacts/9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c.wasm",
+  "wasmSha256": "9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c",
+  "wasmBytes": 261226,
+  "rust": "1.98.0",
+  "nearSdk": "5.30.0",
+  "nearCli": "near-cli-rs 0.30.1",
+  "atomicActions": ["DeployContract", "FunctionCall:new"],
+  "initArgs": {
+    "manager_id": "commonsops.testnet",
+    "network": "TESTNET"
+  },
+  "prepaidGas": "50000000000000",
+  "attachedDeposit": "0",
+  "nonce": 276384918000001,
+  "recentBlockHash": "44x2TvY8BbtjrpCgb6DbVfHmLZDF7YTVBuUSqK9Cffs2",
+  "preDeployment": {
+    "blockHash": "44x2TvY8BbtjrpCgb6DbVfHmLZDF7YTVBuUSqK9Cffs2",
+    "blockHeight": 276385221,
+    "codeHash": "11111111111111111111111111111111",
+    "storageUsage": 182,
+    "amount": "10000000000000000000000000",
+    "locked": "0"
+  },
+  "unsignedCommandArgs": [
+    "contract",
+    "deploy",
+    "commonsops.testnet",
+    "use-file",
+    "deployments/testnet/artifacts/9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c.wasm",
+    "with-init-call",
+    "new",
+    "json-args",
+    "{\"manager_id\":\"commonsops.testnet\",\"network\":\"TESTNET\"}",
+    "prepaid-gas",
+    "50 Tgas",
+    "attached-deposit",
+    "0 NEAR",
+    "network-config",
+    "testnet",
+    "sign-later",
+    "--signer-public-key",
+    "ed25519:HDMbog4TVvtNoh4XMZqfiD4R5h4uLumRcwgNvQyuwq39",
+    "--nonce",
+    "276384918000001",
+    "--block-hash",
+    "44x2TvY8BbtjrpCgb6DbVfHmLZDF7YTVBuUSqK9Cffs2",
+    "save-to-file",
+    "deployments/testnet/unsigned-deploy.transaction"
+  ],
+  "transactionHash": "DTkNwnhsF73z4umYgSQgauCLdpPzgtnxeuTb7TE5Dd7R",
+  "receipts": [
+    "BWdoEsMuBteB3gpo8ZiQ27oXguSLKZUwLjh6wyZV2YBY",
+    "AfQXPKpb6mV6agZE9vjfTE2eyRv5ZbtKd4EMEpvXYBnx"
+  ],
+  "postDeployment": {
+    "blockHash": "8Ajt9XEfAJVjiSFTo2aTPALWQsZkDpNr4x575BV4uobA",
+    "codeHash": "Avdrs3wmsssxb3nDDAJsMyFqc137NaSSpF4JNuXGP4zP",
+    "blockHeight": 276385914,
+    "amount": "9931831644455389400000000",
+    "storageUsage": 261511
+  },
+  "broadcast": {
+    "transactionBlockHash": "8Ajt9XEfAJVjiSFTo2aTPALWQsZkDpNr4x575BV4uobA",
+    "signerPublicKey": "ed25519:HDMbog4TVvtNoh4XMZqfiD4R5h4uLumRcwgNvQyuwq39",
+    "nonce": 276384918000001
+  }
+}
