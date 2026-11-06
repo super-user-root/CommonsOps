@@ -33,7 +33,7 @@ export default async function HomePage() {
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
-      <main id="main-content">
+      <main id="main-content" tabIndex={-1}>
         <header className="masthead">
           <a
             className="wordmark"
@@ -168,6 +168,7 @@ export default async function HomePage() {
             className="journey-stage"
             id="operator-stage"
             aria-labelledby="operator-stage-heading"
+            tabIndex={-1}
           >
             <div className="stage-rail" aria-hidden="true">
               <span>01</span>
@@ -212,6 +213,7 @@ export default async function HomePage() {
             className="journey-stage"
             id="contributor-stage"
             aria-labelledby="contributor-stage-heading"
+            tabIndex={-1}
           >
             <div className="stage-rail" aria-hidden="true">
               <span>02</span>
@@ -251,6 +253,7 @@ export default async function HomePage() {
             className="journey-stage"
             id="reviewer-stage"
             aria-labelledby="reviewer-stage-heading"
+            tabIndex={-1}
           >
             <div className="stage-rail" aria-hidden="true">
               <span>03</span>
