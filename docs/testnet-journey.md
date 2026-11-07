@@ -115,3 +115,26 @@ Read-only: the script signs nothing and spends nothing. Each run re-derives
 the attribution from the live chain: `APPLIED`/`PAID` with the same record and
 an unchanged store fingerprint (`IDEMPOTENT` is the store-level status for
 re-applying an identical record within one store instance).
+
+## The workspace live surface (P5-T11)
+
+The web workspace (`apps/web`) now has a live section alongside the recorded
+journey stages:
+
+- **Live reads (no wallet needed):** the browser performs read-only JSON-RPC
+  `query` calls to `https://rpc.testnet.near.org` at final blocks and renders
+  template 0, the latest cycle (0:0), the next period's cycle when the
+  operator materializes it, and `foundation_status`. Every read failure is
+  shown as a named error; no fallback data is invented.
+- **Wallet-signed contributor transactions:** with a testnet wallet connected
+  (official `@near-wallet-selector` 10.1.4: MyNearWallet, Meteor, Here), the
+  reviewed intent construction (`claim_cycle`, `submit_evidence`,
+  `release_claim`, `expire_cycle_or_claim`) becomes sendable against the live
+  latest cycle — zero attached deposit and 100 TGas prepaid gas, the exact
+  wire values of the recorded journey above. Submitted transactions link to
+  `https://explorer.testnet.near.org/transactions/<hash>`, and a wallet
+  dismissal is reported honestly as "no request sent".
+- **Still out of the app:** operator (manager) methods stay display-only in
+  the UI, no private keys exist in app code, mainnet is refused in code, and
+  the DAO payout flow remains inside the DAO's own governance — the app never
+  simulates a payout.

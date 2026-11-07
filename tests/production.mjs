@@ -70,20 +70,23 @@ try {
   assert.match(html, /Testnet workspace/);
   assert.match(
     html,
-    /Contract and verifier foundations are real\. Live operations are not\./,
+    /Live testnet reads, wallet-signed transactions, recorded payout\s+proof\./,
   );
   assert.match(
     html,
-    /No keys\. No fabricated records\. No transaction controls\./,
+    /No keys\. No fabricated records\. DAO payouts stay in the DAO\./,
   );
-  assert.match(html, /Wallet unavailable/);
+  // The live surface replaced the read-only boundary: the header now offers a
+  // real wallet connection and the stale "unavailable" copy must be gone.
+  assert.doesNotMatch(html, /Wallet unavailable/);
+  assert.match(html, /Connect testnet wallet/);
   assert.ok(
     !/<form\b/.test(html),
-    "Workspace must not present a transaction form before deployment",
+    "Workspace must not present a transaction form: contributor actions are single wallet-signed sends",
   );
   assert.ok(
     /<button[^>]*disabled/.test(html),
-    "Wallet action must render disabled",
+    "Recorded intent previews must render disabled",
   );
   assert.equal(
     (await fetch(`${url}/not-a-route`, { signal: AbortSignal.timeout(5000) }))
@@ -91,7 +94,7 @@ try {
     404,
   );
   console.log(
-    "PASS production HTTP smoke: testnet workspace, disabled wallet, metadata, 404",
+    "PASS production HTTP smoke: testnet workspace, live surface, metadata, 404",
   );
 } finally {
   server.kill();

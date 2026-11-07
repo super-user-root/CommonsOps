@@ -66,3 +66,51 @@ test("production page exposes the full SHA and resolves scoped contributor ARIA 
   assert.match(wrappingRule, /word-break: break-all/);
   assert.doesNotMatch(wrappingRule, /text-overflow|overflow: (?:hidden|clip)/);
 });
+
+test("production page exposes the live registry section with an enabled wallet control", async () => {
+  const [html, styles] = await Promise.all([
+    readFile(builtPage, "utf8"),
+    readFile(stylesPath, "utf8"),
+  ]);
+
+  // The stale read-only boundary is gone from the header.
+  assert.doesNotMatch(html, /Wallet unavailable/);
+  assert.doesNotMatch(html, /no in-app RPC by design/);
+
+  // The live section is present and clearly labeled live.
+  assert.match(
+    html,
+    /Live registry · NEAR testnet — connect a wallet to interact/,
+  );
+  const ids = attributeValues(html, "id");
+  // Static live-section IDs render on the server; the snapshot-dependent
+  // card IDs (live-template-heading etc.) appear after the client read.
+  for (const id of [
+    "live-registry",
+    "live-registry-heading",
+    "live-actions-heading",
+    "live-operator-heading",
+    "live-dao-heading",
+  ]) {
+    assert(ids.includes(id), `missing live section ID: ${id}`);
+  }
+
+  // The header wallet control is a real, reachable, enabled button.
+  const walletButton = html.match(
+    /<button[^>]*id="wallet-connect-button"[^>]*>([\s\S]*?)<\/button>/,
+  );
+  assert.ok(walletButton, "header wallet connect button missing");
+  assert.match(walletButton[0], /Connect testnet wallet/);
+  assert.doesNotMatch(walletButton[0], /\bdisabled\b/);
+
+  // Live request states are announced politely; the DAO payout note is
+  // display-only and points at the recorded journey doc.
+  assert.ok(html.includes('aria-live="polite"'));
+  assert.match(html, /DAO payout — not in this app/);
+  assert.match(html, /docs\/testnet-journey\.md/);
+
+  // The live styles exist for the new components.
+  assert.match(styles, /\.live-section \{/);
+  assert.match(styles, /\.live-card \{/);
+  assert.match(styles, /\.account-chip \{/);
+});

@@ -7,12 +7,17 @@
     "dev": "next dev --hostname 127.0.0.1",
     "start": "next start --hostname 127.0.0.1",
     "build": "next build && node --test lib/production-accessibility.test.mjs",
-    "test": "node --test lib/*.test.ts src/components/*.test.ts src/features/**/*.test.ts",
+    "test": "node --test lib/*.test.ts lib/live/*.test.ts src/components/*.test.ts src/features/**/*.test.ts",
     "typecheck": "next typegen && tsc --project tsconfig.json && pnpm run test"
   },
   "dependencies": {
     "@commonsops/domain": "workspace:*",
     "@commonsops/near": "workspace:*",
+    "@near-wallet-selector/core": "10.1.4",
+    "@near-wallet-selector/here-wallet": "10.1.4",
+    "@near-wallet-selector/meteor-wallet": "10.1.4",
+    "@near-wallet-selector/modal-ui": "10.1.4",
+    "@near-wallet-selector/my-near-wallet": "10.1.4",
     "next": "16.4.4",
     "react": "19.3.1",
     "react-dom": "19.3.1"

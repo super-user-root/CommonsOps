@@ -78,7 +78,7 @@ pnpm build
 pnpm start
 ```
 
-Open the same loopback URL — see the same recorded journey in production mode, no wallet prompts, no live RPC, and no transaction buttons. The workspace imports the recorded onchain data in place; live verification stays in the read-only scripts. No secret environment defaults exist. `NEXT_TELEMETRY_DISABLED=1` is supplied by the verification runner/CI, not a credential. No deployment commands are provided.
+Open the same loopback URL — see the same recorded journey in production mode, plus the live registry section: read-only testnet RPC reads run in the browser, and connecting a testnet wallet enables wallet-signed contributor transactions. The recorded stages stay immutable imported onchain data; the DAO payout flow stays out of the app. No secret environment defaults exist. `NEXT_TELEMETRY_DISABLED=1` is supplied by the verification runner/CI, not a credential. No deployment commands are provided.
 
 ## CI
 

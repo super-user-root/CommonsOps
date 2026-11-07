@@ -3,5 +3,11 @@ packages:
   - packages/*
   - tests
 
+allowBuilds:
+  # secp256k1 is a declared but never-imported dependency of @near-js/crypto
+  # (which uses @noble/curves); its native build script is not needed, so it
+  # is explicitly refused.
+  secp256k1: false
+
 engineStrict: true
 saveExact: true

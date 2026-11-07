@@ -26,10 +26,10 @@ test("NEAR adapter export enables no network, wallet, reads, or transactions", (
   assert.ok(Object.isFrozen(adapterFoundationMetadata));
 });
 
-test("shell metadata accurately describes the scaffold", () => {
+test("shell metadata accurately describes the live testnet workspace", () => {
   assert.equal(siteMetadata.title, "CommonsOps | Testnet workspace");
-  assert.match(siteMetadata.description, /Wallet signing remains disabled/);
-  assert.equal(siteMetadata.stage, "workspace foundation");
-  assert.equal(siteMetadata.liveData, false);
-  assert.equal(siteMetadata.transactions, false);
+  assert.match(siteMetadata.description, /never holds keys or funds/);
+  assert.equal(siteMetadata.stage, "live testnet workspace");
+  assert.equal(siteMetadata.liveData, true);
+  assert.equal(siteMetadata.transactions, true);
 });
