@@ -42,8 +42,9 @@ https://super-user-root.github.io/CommonsOps/
 - [Reconciliation engine](packages/near/src/reconciliation.ts): derives
   `PAID` from finalized receipt graphs; fingerprinted store with
   APPLIED / IDEMPOTENT / CONFLICT / NOT_APPLIED statuses
-- [Web workspace](apps/web/app/page.tsx): fixture-backed
-  operator/contributor/reviewer journey; performs no RPC by design
+- [Web workspace](apps/web/app/page.tsx): recorded-journey stages plus a
+  live registry section — real testnet RPC reads and user-signed
+  transactions via an NEAR wallet selector (testnet-only)
 - [Live smoke](scripts/smoke-testnet.mjs): read-only onchain deployment
   verification against the reviewed artifact
 - [Live reconciliation](scripts/reconcile-live.mjs): read-only re-derivation
@@ -65,6 +66,8 @@ https://super-user-root.github.io/CommonsOps/
 
 - No token, no custody, no AI-driven approval, no cross-chain payments, no
   autonomous scheduler. Governance and treasury stay entirely inside the
-  Sputnik DAO. The web workspace performs no live RPC and executes no
-  transactions.
+  Sputnik DAO; payouts are never simulated in-app. The web workspace
+  performs live testnet reads and user-signed transactions through the
+  connected wallet (testnet-only, no keys in app code); recorded-journey
+  stages render the exact recorded onchain data.
 - Network: NEAR testnet only. License: MIT.
