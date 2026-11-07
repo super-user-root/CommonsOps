@@ -1,0 +1,70 @@
+# CommonsOps
+
+> CommonsOps pays for recurring public work with proof. A NEAR smart-contract
+> registry tracks recurring work cycles, binds the claimant to the payout
+> recipient, freezes immutable evidence, and links one-time onchain to a
+> Sputnik DAO proposal. `PAID` is derived offchain from the finalized causal
+> receipt graph of the real DAO transfer — approval alone is never payment.
+> The registry is live on NEAR testnet with a fully executed, independently
+> reviewed work cycle.
+
+Live demo (static fixture workspace, no wallet needed):
+https://super-user-root.github.io/CommonsOps/
+
+## Core documents
+
+- [README](README.md): product overview, live evidence table, do-X-see-Y
+  reproducible steps, claim-to-evidence map, track mapping, FAQ
+- [Testnet journey](docs/testnet-journey.md): the complete executed work
+  cycle with explorer transaction links and receipt-level verification
+- [Security findings](docs/p4-t02-findings.md): threat model, adversarial
+  review findings and dispositions, onchain failure-path demonstrations
+- [Release verification](docs/release-verification.md): why the live
+  deployment is the release candidate (three-way identical WASM)
+- [Demo guide](demo/README.md): screenshots mapped to journey steps and live
+  evidence
+- [Command reference](docs/COMMANDS.md): per-command setup, artifacts, the
+  GitHub Pages export, and the CI description
+
+## Code map
+
+- [Contract entry](contracts/registry/src/lib.rs): near-sdk registry —
+  templates, deterministic cycles, claims, immutable evidence, one-time
+  proposal links
+- [Contract domain](contracts/registry/src/domain.rs): core types and
+  validation rules
+- [Contract tests](contracts/registry/src/tests.rs): 58 Rust tests including
+  the duplicate-claim guard
+- [Domain model](packages/domain/src/index.ts): cycle/claim/evidence state
+  machine shared by all packages
+- [Proposal builder](packages/near/src/proposal-builder.ts): pinned Sputnik
+  DAO profiles and exact `act_proposal` argument construction
+- [Reconciliation engine](packages/near/src/reconciliation.ts): derives
+  `PAID` from finalized receipt graphs; fingerprinted store with
+  APPLIED / IDEMPOTENT / CONFLICT / NOT_APPLIED statuses
+- [Web workspace](apps/web/app/page.tsx): fixture-backed
+  operator/contributor/reviewer journey; performs no RPC by design
+- [Live smoke](scripts/smoke-testnet.mjs): read-only onchain deployment
+  verification against the reviewed artifact
+- [Live reconciliation](scripts/reconcile-live.mjs): read-only re-derivation
+  of the recorded payout from chain data
+- [E2E replay suite](tests/e2e/e2e-replay.test.ts): deterministic offline
+  end-to-end replay including conflict and idempotency paths
+
+## Verify (offline or read-only)
+
+- `pnpm install --frozen-lockfile && pnpm verify:offline` — format checks,
+  strict TypeScript, 125 TypeScript unit tests, 58 Rust contract tests,
+  production build, release-WASM checks, loopback HTTP smoke
+- `node scripts/smoke-testnet.mjs commonsops.testnet` — live onchain
+  deployment equals the reviewed artifact (exit 0; throws on any mismatch)
+- `node scripts/reconcile-live.mjs` — re-derives the recorded payout to
+  APPLIED / PAID from live chain data
+
+## Boundaries
+
+- No token, no custody, no AI-driven approval, no cross-chain payments, no
+  autonomous scheduler. Governance and treasury stay entirely inside the
+  Sputnik DAO. The web workspace performs no live RPC and executes no
+  transactions.
+- Network: NEAR testnet only. License: MIT.
