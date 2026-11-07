@@ -292,11 +292,12 @@ the read-only scripts and the recorded journey, where claims can be checked.
   (from 2026-10-19). The initial repository seed (commit
   `52a9425eb1ce84071f28d63a763edbc71d42f967`) contained only a README,
   ignore patterns, and the MIT license — no pre-hackathon product code.
-- **AI disclosure:** ZCode AI implemented the repository (contract, tests,
-  tooling, web workspace, and documentation) under human direction, with
-  every task independently reviewed by a separate AI reviewer agent before
-  merge; AI output does not establish correctness or security — the tests,
-  reviews, and onchain evidence in this repository do.
+- **AI disclosure:** This project was built with AI assistance. The human
+  lead supervised the work end to end — directed all product decisions,
+  performed code review on every change before merge, and executed all
+  onchain deployments and transactions on NEAR testnet. AI output does not
+  establish correctness or security — the tests, the reviews, and the
+  onchain evidence in this repository do.
 - **Libraries:** Next.js 16.4.4, React/React DOM 19.3.1, TypeScript 7.0.2,
   Prettier 3.9.10, near-sdk 5.30.0 (exact pins; transitive inputs in
   `pnpm-lock.yaml` and `contracts/registry/Cargo.lock`). No application
