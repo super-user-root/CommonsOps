@@ -38,6 +38,7 @@ evidence for all of it.
 
 - [In one minute](#in-one-minute)
 - [How it works](#how-it-works)
+- [See it](#see-it)
 - [Explore without running anything](#explore-without-running-anything)
 - [Run it yourself — do X, see Y](#run-it-yourself--do-x-see-y)
 - [Live onchain evidence (testnet)](#live-onchain-evidence-testnet)
@@ -92,14 +93,38 @@ flowchart TB
    amount**, to the **exact recipient**, with a **successful outcome**.
    Look-alike transfers, failed payouts, and sibling receipts do not count.
 
+## See it
+
+The fixture-backed workspace (`pnpm start`) rendering the journey stages. The
+app is honest by design: every stage is labeled as an immutable fixture
+snapshot, and it performs no RPC and no transactions.
+
+![Operator stage: unsigned intent previews](demo/screenshots/03-operator.png)
+
+**Operator** — exact unsigned `create_template` / `materialize_cycle` intent
+previews with deterministic wire values, signing disabled.
+
+![Reviewer boundary: approved alone is not payment](demo/screenshots/05-reviewer-approved-only.png)
+
+**Reviewer boundary** — an approved proposal without a finalized payout
+receipt renders `PENDING_PAYMENT_EVIDENCE`. Approval alone is not payment.
+
+![Verified payout: derived PAID with provenance](demo/screenshots/06-reviewer-paid.png)
+
+**Verified payout** — a submitted, linked cycle whose `PAID` state is
+derived from receipt data through the production model. This frame uses the
+authentic proposal-63 RPC fixture; the same adapter logic reconciled the real
+testnet payout in the [evidence table](#live-onchain-evidence-testnet) below.
+
 ## Explore without running anything
 
 A judge can verify the project end to end without cloning:
 
 1. Read the [evidence table](#live-onchain-evidence-testnet) below — every
    row is a finalized testnet transaction with an explorer link.
-2. Read [docs/testnet-journey.md](docs/testnet-journey.md) — the full 8-step
-   record, including the receipt-level verification of the payout.
+2. Read [docs/testnet-journey.md](docs/testnet-journey.md) — the complete
+   step-by-step record, including the receipt-level verification of the
+   payout.
 3. Read [docs/p4-t02-findings.md](docs/p4-t02-findings.md) — the adversarial
    security review: threat model, findings, dispositions.
 4. Read [docs/release-verification.md](docs/release-verification.md) — why
@@ -168,15 +193,15 @@ no state change** (see [docs/p4-t02-findings.md](docs/p4-t02-findings.md) and
 
 Every claim this README makes, with the fastest way to check it:
 
-| Claim                                                             | Verify with                                                        | Expected                                                                               |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| The deployed contract is the reviewed artifact, byte-for-byte     | `node scripts/smoke-testnet.mjs commonsops.testnet`                | exit 0; `postCodeHash` `Avdrs3wm…` decodes to WASM SHA-256 `9376a482…` (261,226 bytes) |
-| A real payout was executed and linked to its cycle                | `node scripts/reconcile-live.mjs`                                  | `APPLIED` / `PAID`; tx `ApRvPUsw…`, payout receipt `EnL1wpFN…`                         |
-| Look-alike or failed payout graphs are never marked `PAID`        | `pnpm verify:offline` (adapter + reconciliation suites)            | all tests pass; failing graphs yield `AMBIGUOUS` / `NOT_APPLIED`                       |
-| Claimant is the payout recipient — no recipient input exists      | `contracts/registry` + Rust test suite                             | `claim_cycle` binds both to the caller; 58 Rust tests pass                             |
-| Duplicate claim / proposal reuse fail onchain                     | explorer txs in [docs/testnet-journey.md](docs/testnet-journey.md) | both transactions fail; state unchanged                                                |
-| Tests and build reproduce from a fresh clone                      | `pnpm install --frozen-lockfile && pnpm verify:offline`            | all suites + production build + WASM checks pass                                       |
-| Release WASM is three-way identical (clone = worktree = deployed) | [docs/release-verification.md](docs/release-verification.md)       | identical contract tree at deployment and release heads                                |
+| Claim                                                             | Verify with                                                                                     | Expected                                                                                                                          |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| The deployed contract is the reviewed artifact, byte-for-byte     | `node scripts/smoke-testnet.mjs commonsops.testnet`                                             | exit 0; `postCodeHash` `Avdrs3wm…` decodes to WASM SHA-256 `9376a482…` (261,226 bytes)                                            |
+| A real payout was executed and linked to its cycle                | `node scripts/reconcile-live.mjs`                                                               | `APPLIED` / `PAID`; tx `ApRvPUsw…`, payout receipt `EnL1wpFN…`                                                                    |
+| Look-alike or failed payout graphs are never marked `PAID`        | `pnpm verify:offline` (adapter + reconciliation suites)                                         | all tests pass; failing graphs yield `AMBIGUOUS` / `NOT_APPLIED`                                                                  |
+| Claimant is the payout recipient — no recipient input exists      | `contracts/registry` + Rust test suite                                                          | `claim_cycle` binds both to the caller; 58 Rust tests pass                                                                        |
+| Duplicate claim / proposal reuse fail onchain                     | [docs/p4-t02-findings.md](docs/p4-t02-findings.md) + `node --test tests/e2e/e2e-replay.test.ts` | recorded onchain demonstrations (failed txs are not explorer-indexable); the replay suite covers both conflicts deterministically |
+| Tests and build reproduce from a fresh clone                      | `pnpm install --frozen-lockfile && pnpm verify:offline`                                         | all suites + production build + WASM checks pass                                                                                  |
+| Release WASM is three-way identical (clone = worktree = deployed) | [docs/release-verification.md](docs/release-verification.md)                                    | identical contract tree at deployment and release heads                                                                           |
 
 ## What the social track asks vs. what CommonsOps does
 
@@ -216,9 +241,10 @@ It removes the recipient-swap attack class entirely: there is no recipient
 field to inject, and the payout can only land where the work was claimed.
 
 **What if the DAO approves but the transfer fails?**
-The derivation never returns `PAID`: a failed or missing causal child
-Transfer yields `PENDING_PAYMENT_EVIDENCE` or `AMBIGUOUS`, with the reason
-recorded. Approval alone is never payment.
+The derivation never returns `PAID`: the adapter/reviewer records the payout
+as `FAILED` and the reconciliation stays `NOT_APPLIED`; only genuinely
+ambiguous attribution (for example identical-amount failed graphs) yields
+`AMBIGUOUS` — with the reason recorded. Approval alone is never payment.
 
 **Why testnet only?**
 Hackathon scope. The contract is complete and exercised onchain; moving to
