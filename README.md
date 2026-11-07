@@ -13,9 +13,13 @@ been executed and independently reviewed. This repository contains the
 contract, the reconciliation tooling, a truthful web workspace, and the public
 evidence for all of it.
 
+- **Live demo:** <https://super-user-root.github.io/CommonsOps/> — the
+  fixture-backed workspace, no wallet or setup needed
 - **Track:** Social Money (`social`)
 - **Network:** NEAR testnet only (no mainnet deployment)
 - **License:** [MIT](LICENSE)
+- **For AI screeners:** start from [llms.txt](llms.txt) — a curated index of
+  documents, code entry points, and verification commands
 
 ## In one minute
 
@@ -95,9 +99,12 @@ flowchart TB
 
 ## See it
 
-The fixture-backed workspace (`pnpm start`) rendering the journey stages. The
-app is honest by design: every stage is labeled as an immutable fixture
-snapshot, and it performs no RPC and no transactions.
+The same workspace is live at
+<https://super-user-root.github.io/CommonsOps/> — a static build of this
+repository's fixture journey, no wallet or setup needed. Locally, `pnpm
+start` renders the identical pages. The app is honest by design: every stage
+is labeled as an immutable fixture snapshot, and it performs no RPC and no
+transactions.
 
 ![Operator stage: unsigned intent previews](demo/screenshots/03-operator.png)
 
@@ -120,17 +127,22 @@ testnet payout in the [evidence table](#live-onchain-evidence-testnet) below.
 
 A judge can verify the project end to end without cloning:
 
-1. Read the [evidence table](#live-onchain-evidence-testnet) below — every
+1. Open the live workspace:
+   <https://super-user-root.github.io/CommonsOps/> — the fixture-backed
+   operator/contributor/reviewer journey, no setup.
+2. Read the [evidence table](#live-onchain-evidence-testnet) below — every
    row is a finalized testnet transaction with an explorer link.
-2. Read [docs/testnet-journey.md](docs/testnet-journey.md) — the complete
+3. Read [docs/testnet-journey.md](docs/testnet-journey.md) — the complete
    step-by-step record, including the receipt-level verification of the
    payout.
-3. Read [docs/p4-t02-findings.md](docs/p4-t02-findings.md) — the adversarial
+4. Read [docs/p4-t02-findings.md](docs/p4-t02-findings.md) — the adversarial
    security review: threat model, findings, dispositions.
-4. Read [docs/release-verification.md](docs/release-verification.md) — why
+5. Read [docs/release-verification.md](docs/release-verification.md) — why
    the live deployment **is** the release candidate (byte-identical WASM).
-5. Open [demo/README.md](demo/README.md) — screenshots of the workspace,
+6. Open [demo/README.md](demo/README.md) — screenshots of the workspace,
    each mapped to its journey step and live evidence.
+7. AI screeners: start from [llms.txt](llms.txt), then follow the
+   [claim → evidence map](#claim--evidence-map) below.
 
 ## Run it yourself — do X, see Y
 
@@ -258,16 +270,20 @@ the read-only scripts and the recorded journey, where claims can be checked.
 
 ## Repository layout
 
-| Path                   | Contents                                                                   |
-| ---------------------- | -------------------------------------------------------------------------- |
-| `contracts/registry`   | near-sdk Rust contract: templates, cycles, claims, evidence, links         |
-| `packages/near`        | domain model, Sputnik adapter, proposal builder, reconciliation engine     |
-| `apps/web`             | fixture-backed Next.js workspace (operator / contributor / reviewer)       |
-| `scripts/`             | read-only live runners: `smoke-testnet.mjs`, `reconcile-live.mjs`          |
-| `tests/`               | TypeScript unit suites and the offline e2e replay suite                    |
-| `docs/`                | journey record, command reference, security findings, release verification |
-| `demo/`                | demo screenshots mapped to the journey                                     |
-| `deployments/testnet/` | committed public provenance: deployment manifest + smoke result            |
+Where to start reading, per area:
+
+| Path                   | Start reading at                                                                                                                   | What it is                                                                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts/registry`   | [`src/lib.rs`](contracts/registry/src/lib.rs)                                                                                      | near-sdk Rust contract: templates, deterministic cycles, claims, immutable evidence, one-time proposal links (58 tests in [`src/tests.rs`](contracts/registry/src/tests.rs)) |
+| `packages/domain`      | [`src/index.ts`](packages/domain/src/index.ts)                                                                                     | cycle/claim/evidence state machine shared by all packages                                                                                                                    |
+| `packages/near`        | [`src/reconciliation.ts`](packages/near/src/reconciliation.ts), [`src/proposal-builder.ts`](packages/near/src/proposal-builder.ts) | causal payout derivation (`PAID` from receipt graphs); pinned Sputnik profiles and exact proposal construction                                                               |
+| `apps/web`             | [`app/page.tsx`](apps/web/app/page.tsx)                                                                                            | fixture-backed Next.js workspace (operator / contributor / reviewer); no RPC by design                                                                                       |
+| `scripts/`             | [`smoke-testnet.mjs`](scripts/smoke-testnet.mjs), [`reconcile-live.mjs`](scripts/reconcile-live.mjs)                               | read-only live verification runners                                                                                                                                          |
+| `tests/`               | [`e2e/e2e-replay.test.ts`](tests/e2e/e2e-replay.test.ts)                                                                           | offline deterministic e2e replay: conflicts, idempotency, convergence                                                                                                        |
+| `docs/`                | [`testnet-journey.md`](docs/testnet-journey.md)                                                                                    | journey record, command reference, security findings, release verification                                                                                                   |
+| `demo/`                | [`README.md`](demo/README.md)                                                                                                      | demo screenshots mapped to the journey                                                                                                                                       |
+| `deployments/testnet/` | [`prepared-deployment.json`](deployments/testnet/prepared-deployment.json)                                                         | committed public provenance: deployment manifest + smoke result                                                                                                              |
+| [`llms.txt`](llms.txt) | —                                                                                                                                  | curated index for AI screeners: documents, code entry points, verify commands                                                                                                |
 
 ## Verification and review
 
