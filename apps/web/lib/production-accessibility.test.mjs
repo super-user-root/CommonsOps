@@ -83,12 +83,11 @@ test("production page exposes the live registry section with an enabled wallet c
     /Live registry · NEAR testnet — connect a wallet to interact/,
   );
   const ids = attributeValues(html, "id");
-  // Static live-section IDs render on the server; the snapshot-dependent
-  // card IDs (live-template-heading etc.) appear after the client read.
+  // Static live-section IDs render on the server; the per-template card and
+  // action IDs appear after the client read (scoped per template id).
   for (const id of [
     "live-registry",
     "live-registry-heading",
-    "live-actions-heading",
     "live-operator-heading",
     "live-dao-heading",
   ]) {

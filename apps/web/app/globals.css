@@ -1082,6 +1082,27 @@ main:focus,
 }
 
 /* Live registry surface (NEAR testnet reads + wallet-signed transactions). */
+.live-template-group {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 26px;
+  padding-top: 26px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.live-template-group:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.live-template-error {
+  border-color: var(--error);
+  margin-bottom: 16px;
+}
+
+.live-template-error h3 {
+  color: var(--error);
+}
 
 .live-section {
   border-top: 1px solid var(--line-strong);

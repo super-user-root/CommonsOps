@@ -20,6 +20,10 @@ const walletLoaderPath = path.resolve(
   import.meta.dirname,
   "../../lib/live/wallet.ts",
 );
+const readsPath = path.resolve(
+  import.meta.dirname,
+  "../../lib/live/registry-reads.ts",
+);
 
 test("live section keeps the required label, honest states, and scoped heading", async () => {
   const component = await readFile(componentPath, "utf8");
@@ -29,14 +33,6 @@ test("live section keeps the required label, honest states, and scoped heading",
   );
   assert.match(component, /id="live-registry"/);
   assert.match(component, /aria-labelledby="live-registry-heading"/);
-  // Snapshot-dependent cards render once the live read succeeds.
-  for (const id of [
-    "live-template-heading",
-    "live-latest-cycle-heading",
-    "live-next-cycle-heading",
-  ]) {
-    assert.match(component, new RegExp(`id="${id}"`), `missing ${id}`);
-  }
   // Honest states: loading, named error without fallback data, retry.
   assert.match(
     component,
@@ -44,16 +40,68 @@ test("live section keeps the required label, honest states, and scoped heading",
   );
   assert.match(component, /No\s+fallback\s+data is shown/);
   assert.match(component, /Re-read live state/);
-  // No open cycle yet is rendered honestly for the next period.
+  // Per-template read errors are named and do not invent data.
+  assert.match(component, /templates after this one were not read/);
+  // No open cycle yet is rendered honestly for a template's next period.
   assert.match(
     component,
-    /No cycle for period \{nextPeriodIndex \?\? "\?"\} yet/,
+    /No cycle for period \{read\.template\.next_period_index\} yet/,
   );
   // Wallet rejection is honest: no request sent.
   assert.match(component, /describeLiveRequest/);
   // Operator methods stay display-only and the DAO payout note is present.
   assert.match(component, /display-only/);
   assert.match(component, /docs\/testnet-journey\.md/);
+  // Foundation status is a global read in the meta strip.
+  assert.match(component, /Foundation status:/);
+});
+
+test("every registered template gets a card group with actions bound to its own cycle", async () => {
+  const component = await readFile(componentPath, "utf8");
+  // The snapshot's template list drives per-template groups.
+  assert.match(component, /snapshot\.templates\.map/);
+  // Scoped, per-template IDs (unique per template id, not hardcoded once).
+  for (const pattern of [
+    /id=\{`live-template-\$\{templateId\}-heading`\}/,
+    /id=\{`live-latest-\$\{templateId\}-heading`\}/,
+    /id=\{`live-next-\$\{templateId\}-heading`\}/,
+    /id=\{`live-actions-\$\{templateId\}-heading`\}/,
+  ]) {
+    assert.match(component, pattern);
+  }
+  // The actions bind to THIS group's newest live cycle: next period's cycle
+  // when materialized (judge-demo 2:0 OPEN), otherwise the latest existing.
+  assert.match(
+    component,
+    /actionableCycle = paused\s*\?\s*null\s*:\s*\(read\.nextCycle\?\.cycle \?\? read\.latestCycle\?\.cycle \?\? null\)/,
+  );
+  // Paused templates render without contributor actions.
+  assert.match(component, /\{paused \? null : \(/);
+  // Operator and DAO cards render once globally, not per template.
+  assert.equal(
+    component.split('aria-labelledby="live-operator-heading"').length - 1,
+    1,
+  );
+  assert.equal(
+    component.split('aria-labelledby="live-dao-heading"').length - 1,
+    1,
+  );
+});
+
+test("registry reads enumerate templates with hardened parsing and a cap", async () => {
+  const reads = await readFile(readsPath, "utf8");
+  assert.match(reads, /MAX_TEMPLATE_ENUMERATION = 16/);
+  assert.match(reads, /for \(let id = 0; id < maxTemplates; id\+\+\)/);
+  // A missing template (registry returns none) completes the enumeration…
+  assert.match(reads, /if \(raw === null\)/);
+  // …while a failing read is a named per-template ERROR entry, not a global throw.
+  assert.match(reads, /kind: "ERROR"/);
+  // Cycle reads run only for active templates.
+  assert.match(reads, /if \(template\.active\)/);
+  // The live snapshot still pins the hardened parsers.
+  assert.match(reads, /parseTemplate\(raw\)/);
+  assert.match(reads, /parseCycle\(/);
+  assert.match(reads, /parseFoundationStatus\(/);
 });
 
 test("live section derives actions only from the reviewed intent builders", async () => {
