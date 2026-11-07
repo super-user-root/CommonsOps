@@ -394,7 +394,7 @@ test("requires a supplied SUBMITTED cycle", async () => {
   );
 });
 
-test("builds exact zero-deposit link_proposal ABI only for a positive U64 ID", async () => {
+test("builds exact zero-deposit link_proposal ABI for a canonical U64 ID including zero", async () => {
   const model = await buildReviewerModel(input());
   assert.equal(model.link.status, "PREVIEW_READY");
   assert.deepEqual(model.link.intent, {
@@ -415,7 +415,13 @@ test("builds exact zero-deposit link_proposal ABI only for a positive U64 ID", a
   assert.equal(absent.link.status, "AWAITING_PROPOSAL_ID");
   assert.equal(absent.link.intent, null);
 
-  for (const invalid of ["0", "00", "01", "-1", "1.5", `${U64_MAX}0`]) {
+  // Sputnik numbers proposals from zero and the deployed registry accepted a
+  // proposal-0 link onchain (docs/testnet-journey.md step 8).
+  const zero = await buildReviewerModel(input({ proposalIdForLink: "0" }));
+  assert.equal(zero.link.status, "PREVIEW_READY");
+  assert.equal(zero.link.intent?.args.proposal_id, "0");
+
+  for (const invalid of ["00", "01", "-1", "1.5", `${U64_MAX}0`]) {
     await assert.rejects(
       buildReviewerModel(input({ proposalIdForLink: invalid })),
       /proposalIdForLink/,

@@ -5,12 +5,11 @@ import {
   fixtureJourneyConstants,
 } from "./fixture-journey.ts";
 
-const expectedNoDeploymentReason =
-  "No reviewed testnet registry deployment is configured.";
-const expectedContributorNoDeploymentReason =
-  "No reviewed testnet registry deployment is configured. Wallet connector is not configured.";
+const expectedWalletOnlyReason = "Wallet connector is not configured.";
+const expectedClaimUnavailableReason = `Only an open, live cycle can be claimed. ${expectedWalletOnlyReason}`;
+const expectedExpireUnavailableReason = `Neither the claim nor work deadline has elapsed. ${expectedWalletOnlyReason}`;
 
-test("derives exact disabled operator fixture intents", async () => {
+test("derives exact disabled operator intents from recorded template 0", async () => {
   const journey = await buildFixtureJourney();
   assert.deepEqual(
     journey.operator.intents.map((intent) => intent.method),
@@ -20,38 +19,38 @@ test("derives exact disabled operator fixture intents", async () => {
   const [create, materialize] = journey.operator.intents;
   assert(create && materialize);
   assert.deepEqual(create, {
-    receiverId: "",
+    receiverId: "commonsops.testnet",
     method: "create_template",
     args: {
       input: {
-        dao_account_id: "marmaj.sputnikv2.testnet",
-        title: "Recurring public documentation maintenance",
+        dao_account_id: "commonsops-dao.sputnikv2.testnet",
+        title: "Public documentation maintenance",
         description:
-          "Review and update the community's public contributor documentation.",
-        start_at_ns: "1793740800000000000",
+          "Recurring maintenance of the CommonsOps public documentation: review and merge community pull requests.",
+        start_at_ns: "1793910183011867400",
         interval_ns: "604800000000000",
         work_window_ns: "432000000000000",
-        claim_duration_ns: "86400000000000",
-        amount_yocto: "81900000000000000000000000",
+        claim_duration_ns: "172800000000000",
+        amount_yocto: "500000000000000000000000",
       },
     },
     attachedDepositYocto: "40960000000000000000000",
     network: "TESTNET",
     signingEnabled: false,
-    disabledReason: expectedNoDeploymentReason,
+    disabledReason: expectedWalletOnlyReason,
   });
   assert.deepEqual(materialize, {
-    receiverId: "",
+    receiverId: "commonsops.testnet",
     method: "materialize_cycle",
-    args: { template_id: "7" },
+    args: { template_id: "0" },
     attachedDepositYocto: "163840000000000000000000",
     network: "TESTNET",
     signingEnabled: false,
-    disabledReason: expectedNoDeploymentReason,
+    disabledReason: expectedWalletOnlyReason,
   });
 });
 
-test("derives claimed contributor identity, evidence and all four disabled intents", async () => {
+test("derives the recorded claimed cycle identity, evidence and all four disabled intents", async () => {
   const journey = await buildFixtureJourney();
   const contributor = journey.contributor;
 
@@ -61,20 +60,32 @@ test("derives claimed contributor identity, evidence and all four disabled inten
     contributor.observedBlockTimestampNs,
     fixtureJourneyConstants.observedBlockTimestampNs,
   );
-  assert.equal(contributor.cycle.claim?.claimant_id, "chloe.testnet");
+  assert.deepEqual(contributor.cycle.key, {
+    template_id: "0",
+    period_index: "0",
+  });
+  assert.deepEqual(contributor.view.key, {
+    template_id: "0",
+    period_index: "0",
+  });
+  assert.equal(
+    contributor.cycle.dao_account_id,
+    "commonsops-dao.sputnikv2.testnet",
+  );
+  assert.equal(contributor.cycle.claim?.claimant_id, "commonsops.testnet");
   assert.equal(
     contributor.cycle.claim?.payout_recipient_id,
     contributor.cycle.claim?.claimant_id,
   );
-  assert.equal(contributor.view.payoutRecipientId, "chloe.testnet");
+  assert.equal(contributor.view.payoutRecipientId, "commonsops.testnet");
   assert.deepEqual(contributor.evidencePreview, {
-    repository_owner: "example",
-    repository_name: "docs",
-    pull_request_number: "42",
-    url: "https://github.com/example/docs/pull/42",
-    commit_sha: "ab".repeat(20),
+    repository_owner: "super-user-root",
+    repository_name: "commonsops",
+    pull_request_number: "17",
+    url: "https://github.com/super-user-root/commonsops/pull/17",
+    commit_sha: "1032733c2115b9e9c038d50617f6e151ac8bd59d",
     digest_sha256:
-      "03970fbdf3f5f23e4be7a57548214c1a85ba8ecafac0cc3a34d9f52881e94773",
+      "09936627004b6e19664173302ff9d52613f5febef27ab34cfa488b54b83d71b8",
   });
   assert.deepEqual(
     contributor.intents.map((intent) => intent.method),
@@ -87,43 +98,60 @@ test("derives claimed contributor identity, evidence and all four disabled inten
   );
   for (const intent of contributor.intents) {
     assert.equal(intent.network, "TESTNET");
-    assert.equal(intent.receiverId, "");
+    assert.equal(intent.receiverId, "commonsops.testnet");
     assert.equal(intent.attachedDepositYocto, "0");
     assert.equal(intent.signingEnabled, false);
-    assert.match(intent.disabledReason, /No reviewed testnet registry/);
+    assert.match(intent.disabledReason, /Wallet connector is not configured/);
   }
 
+  const claim = contributor.intents.find(
+    (intent) => intent.method === "claim_cycle",
+  );
   const release = contributor.intents.find(
     (intent) => intent.method === "release_claim",
+  );
+  const expire = contributor.intents.find(
+    (intent) => intent.method === "expire_cycle_or_claim",
   );
   const submit = contributor.intents.find(
     (intent) => intent.method === "submit_evidence",
   );
-  assert(release && submit);
+  assert(claim && release && expire && submit);
+  assert.equal(claim.disabledReason, expectedClaimUnavailableReason);
   assert.equal(release.actionAllowed, true);
-  assert.equal(release.disabledReason, expectedContributorNoDeploymentReason);
+  assert.equal(release.disabledReason, expectedWalletOnlyReason);
+  assert.equal(expire.disabledReason, expectedExpireUnavailableReason);
   assert.equal(submit.actionAllowed, true);
   assert.deepEqual(submit.args, {
-    cycle_key: { template_id: "7", period_index: "3" },
-    repository_owner: "example",
-    repository_name: "docs",
-    pull_request_number: "42",
-    commit_sha: "ab".repeat(20),
+    cycle_key: { template_id: "0", period_index: "0" },
+    repository_owner: "super-user-root",
+    repository_name: "commonsops",
+    pull_request_number: "17",
+    commit_sha: "1032733c2115b9e9c038d50617f6e151ac8bd59d",
   });
   assert.equal("payout_recipient_id" in submit.args, false);
   assert.equal("digest_sha256" in submit.args, false);
 });
 
-test("derives authentic proposal-63 PAID provenance and keeps Approved alone unpaid", async () => {
+test("derives the recorded proposal-0 PAID provenance and keeps Approved alone unpaid", async () => {
   const journey = await buildFixtureJourney();
   const reviewer = journey.reviewer;
 
   assert.equal(reviewer.cycle.status, "SUBMITTED");
   assert.equal(reviewer.cycle.proposal_link?.key.network, "TESTNET");
-  assert.equal(reviewer.cycle.proposal_link?.key.proposal_id, "63");
+  assert.equal(
+    reviewer.cycle.proposal_link?.key.dao_account_id,
+    "commonsops-dao.sputnikv2.testnet",
+  );
+  assert.equal(reviewer.cycle.proposal_link?.key.proposal_id, "0");
   assert.equal(reviewer.model.link.status, "LINKED_IMMUTABLE");
   assert.equal(reviewer.model.link.intent, null);
-  assert.match(reviewer.model.fixtureNotice, /P3-T01 authentic proposal-63/);
+  assert.equal(reviewer.model.profileSupported, false);
+  assert.equal(reviewer.model.profileVerifiable, true);
+  assert.match(
+    reviewer.model.fixtureNotice,
+    /Recorded testnet tx_status snapshot for the proposal-0 payout/,
+  );
   assert.deepEqual(reviewer.model.payment, {
     state: "PAID",
     reason: "Verified one successful causal native NEAR payout",
@@ -134,7 +162,7 @@ test("derives authentic proposal-63 PAID provenance and keeps Approved alone unp
     actionReceiptId: fixtureJourneyConstants.actionReceiptId,
     payoutReceiptId: fixtureJourneyConstants.payoutReceiptId,
     evidenceKey:
-      "testnet:marmaj.sputnikv2.testnet:63:4Rag51CLP56uPZqovgMzEiNKNeSLF8Bn7G3WiNhuGtuJ:H7tr1j2QAcFx3ibwqKeSHtBwpiaFYRaUfPbj6YzBddgJ",
+      "testnet:commonsops-dao.sputnikv2.testnet:0:kBH4oqQh8mMy6oGW727XZmQgVobUv1r8r11ExMrsPro:EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2",
     blockHash: fixtureJourneyConstants.blockHash,
   });
 
@@ -151,19 +179,19 @@ test("derives authentic proposal-63 PAID provenance and keeps Approved alone unp
   );
 });
 
-test("marks every snapshot as immutable fixture-only testnet data with no deployment", async () => {
+test("marks every snapshot as an immutable recorded-journey testnet snapshot", async () => {
   const first = await buildFixtureJourney();
   const second = await buildFixtureJourney();
 
   assert.deepEqual(first.provenance, {
     mode: "FIXTURE_ONLY",
     network: "TESTNET",
-    registryDeployment: null,
+    registryDeployment: "commonsops.testnet",
     walletAvailable: false,
     liveReadsRan: false,
     notice:
-      "Stages 1–3 are separate immutable fixture snapshots of one journey, not one mutable live record.",
-    fixtureSource: "tests/fixtures/sputnik/proposal-63-paid.json",
+      "Stages 1–3 are separate immutable fixture snapshots of the recorded live testnet journey (docs/testnet-journey.md), not one mutable live record.",
+    fixtureSource: "apps/web/lib/fixtures/proposal-0-paid.json",
   });
   assert.notStrictEqual(first, second);
   assert.notStrictEqual(first.contributor.cycle, first.reviewer.cycle);
@@ -209,5 +237,16 @@ test("defines explicit semantic rendering patterns without claiming live request
     journey.statePatterns.find((pattern) => pattern.key === "VERIFIED_FIXTURE")
       ?.detail ?? "",
     /canonical adapter derived PAID/,
+  );
+  assert.match(
+    journey.statePatterns.find((pattern) => pattern.key === "VERIFIED_FIXTURE")
+      ?.detail ?? "",
+    /node scripts\/reconcile-live\.mjs/,
+  );
+  assert.doesNotMatch(
+    journey.statePatterns.find(
+      (pattern) => pattern.key === "EMPTY_UNCONFIGURED",
+    )?.detail ?? "",
+    /testnet is unconfigured/i,
   );
 });

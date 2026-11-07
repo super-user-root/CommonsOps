@@ -18,7 +18,6 @@ const walletReason =
   testnetWallet.state.status === "UNAVAILABLE"
     ? testnetWallet.state.reason
     : "Wallet signing is not available.";
-const testnetState = emptyRegistryReadState("TESTNET");
 const mainnetState = emptyRegistryReadState("MAINNET");
 
 export default async function HomePage() {
@@ -45,7 +44,7 @@ export default async function HomePage() {
             </span>
             CommonsOps
           </a>
-          <nav className="journey-nav" aria-label="Fixture journey">
+          <nav className="journey-nav" aria-label="Recorded journey">
             <a href="#operator-stage">Operator</a>
             <a href="#contributor-stage">Contributor</a>
             <a href="#reviewer-stage">Reviewer</a>
@@ -85,11 +84,11 @@ export default async function HomePage() {
           </p>
           <div className="hero-actions">
             <a className="button primary" href="#operator-stage">
-              Explore the fixture journey
+              Explore the recorded journey
             </a>
             <span className="microcopy">
-              Read-only, deterministic snapshots. No wallet signature or
-              transaction is available.
+              Read-only snapshots of the recorded live journey. No wallet
+              signature or transaction is available.
             </span>
           </div>
           <aside
@@ -100,11 +99,13 @@ export default async function HomePage() {
               01—03
             </span>
             <div>
-              <h2 id="fixture-banner-title">Unsigned fixture preview</h2>
+              <h2 id="fixture-banner-title">
+                Recorded live journey · NEAR testnet
+              </h2>
               <p>
-                {journey.provenance.notice} Values are derived server-side from
-                reviewed feature functions. No clock, random value, wallet, RPC,
-                or GitHub request is used.
+                {journey.provenance.notice} Values are the exact recorded
+                onchain data, imported in place. No clock, random value, wallet,
+                RPC, or GitHub request is used.
               </p>
             </div>
           </aside>
@@ -119,10 +120,12 @@ export default async function HomePage() {
             <p className="eyebrow">Connection boundary</p>
             <h2 id="network-heading">Choose evidence, not assumptions.</h2>
             <p>
-              Testnet and mainnet remain separate configurations. Neither has a
-              deployed CommonsOps registry account, so reads and signing fail
-              closed. The journey below is fixture-backed, not current network
-              state.
+              Testnet and mainnet remain separate configurations. The CommonsOps
+              registry is deployed on testnet (
+              {networkConfigs.TESTNET.registryAccountId}); mainnet stays
+              isolated and unconfigured. This workspace still performs no live
+              RPC and no signing — the journey below imports the recorded
+              onchain data in place.
             </p>
           </div>
           <div className="network-grid" aria-label="Network configurations">
@@ -131,9 +134,11 @@ export default async function HomePage() {
                 <span className="dot" aria-hidden="true" />
                 Testnet
               </div>
-              <strong>{testnetState.status}</strong>
+              <strong>{networkConfigs.TESTNET.registryAccountId}</strong>
               <p>{networkConfigs.TESTNET.rpcUrl}</p>
-              <span className="pill">Development target · no deployment</span>
+              <span className="pill">
+                Registry deployed · no in-app RPC by design
+              </span>
             </article>
             <article className="network-card muted-card">
               <div className="card-heading">
@@ -153,14 +158,14 @@ export default async function HomePage() {
         >
           <div className="section-intro split-intro">
             <div>
-              <p className="eyebrow">Fixture journey</p>
+              <p className="eyebrow">Recorded journey</p>
               <h2 id="journey-heading">Three roles. Three frozen stages.</h2>
             </div>
             <p>
-              This walkthrough demonstrates the reviewed vertical slice without
-              pretending it is deployed. Each role receives an immutable
-              snapshot appropriate to that stage; later evidence never mutates
-              the earlier operator or contributor preview.
+              This walkthrough renders the recorded testnet journey through the
+              reviewed vertical slice. Each role receives an immutable snapshot
+              of the recorded stage; later evidence never mutates the earlier
+              operator or contributor preview.
             </p>
           </div>
 
@@ -182,9 +187,11 @@ export default async function HomePage() {
                     Define the recurring work.
                   </h3>
                   <p>
-                    Canonical recurring-docs values produce exact unsigned
-                    create and materialize intents. Both remain disabled because
-                    no reviewed deployment or wallet exists.
+                    Registered template 0 on testnet: exact integer wire values
+                    produce unsigned create and materialize intents. The intents
+                    stay disabled — no wallet is integrated by design; the
+                    executed transactions are recorded in
+                    docs/testnet-journey.md.
                   </p>
                 </div>
               </header>
@@ -195,7 +202,7 @@ export default async function HomePage() {
                   state={journey.operator.requestState}
                   headingId="operator-create-heading"
                   headingLevel={4}
-                  eyebrow="Unsigned fixture preview · Testnet"
+                  eyebrow="Recorded template 0 · Testnet"
                 />
                 <OperatorPanel
                   draft={journey.operator.draft}
@@ -227,12 +234,14 @@ export default async function HomePage() {
                     Bind the claim and evidence.
                   </h3>
                   <p>
-                    An explicit CLAIMED fixture uses block timestamp{" "}
+                    The recorded CLAIMED cycle 0:0, observed at block timestamp{" "}
                     <span className="exact-value">
                       {journey.contributor.observedBlockTimestampNs} ns
-                    </span>
-                    . Claimant and payout recipient are the same account; all
-                    four reviewed intent previews remain unsigned and disabled.
+                    </span>{" "}
+                    (the recorded claim block). Claimant and payout recipient
+                    are the same account; all four reviewed intent previews
+                    remain unsigned and disabled — the executed transactions are
+                    recorded in docs/testnet-journey.md.
                   </p>
                 </div>
               </header>
@@ -268,9 +277,13 @@ export default async function HomePage() {
                   </h3>
                   <p>
                     This separate immutable SUBMITTED + linked cycle is paired
-                    with the authentic proposal-63 RPC fixture. The canonical
-                    adapter—not browser state—derives PAID and preserves its
-                    full provenance.
+                    with the recorded proposal-0 payout receipt graph — the
+                    executed transaction{" "}
+                    <span className="exact-value">
+                      {fixtureJourneyConstants.transactionHash}
+                    </span>
+                    . The canonical adapter—not browser state—derives PAID and
+                    preserves its full provenance.
                   </p>
                 </div>
               </header>
@@ -287,16 +300,19 @@ export default async function HomePage() {
               <ReviewerPanel
                 model={journey.reviewer.model}
                 requestState={journey.reviewer.requestState}
-                idScope="authentic-proposal-63"
+                idScope="recorded-proposal-0"
                 headingLevel={4}
               />
 
               <p className="fixture-source-note">
-                <strong>Fixture provenance:</strong>{" "}
-                <code>{journey.provenance.fixtureSource}</code> is imported in
-                place and passed through <code>buildReviewerModel</code>. It was
-                not copied, edited, fetched, or presented as a current RPC read.
-                Verified transaction{" "}
+                <strong>Recorded-snapshot provenance:</strong>{" "}
+                <code>{journey.provenance.fixtureSource}</code> is the recorded
+                EXPERIMENTAL_tx_status response for the executed payout,
+                imported in place and passed through{" "}
+                <code>buildReviewerModel</code>. It was not copied, edited, or
+                presented as a current RPC read; re-derive it live with{" "}
+                <code>node scripts/reconcile-live.mjs</code>. Verified
+                transaction{" "}
                 <span className="exact-value">
                   {fixtureJourneyConstants.transactionHash}
                 </span>
@@ -316,19 +332,20 @@ export default async function HomePage() {
               not.
             </h2>
             <p>
-              The fixture journey exercises reviewed construction and
-              verification logic. It does not configure a registry, enable a
-              wallet, or make any network request.
+              The workspace renders the recorded live journey through reviewed
+              construction and verification logic. It still does not enable a
+              wallet, run RPC, or make any network request; live verification
+              stays in the read-only scripts.
             </p>
           </div>
           <dl className="facts">
             <div>
               <dt>Journey data</dt>
-              <dd>Fixture-only</dd>
+              <dd>Recorded live journey</dd>
             </div>
             <div>
               <dt>Live registry</dt>
-              <dd>Not deployed</dd>
+              <dd>{networkConfigs.TESTNET.registryAccountId} — deployed</dd>
             </div>
             <div>
               <dt>Wallet signing</dt>

@@ -56,8 +56,9 @@ export function OperatorPanel({
         <p className="eyebrow">{eyebrow}</p>
         <Heading id={headingId}>{label}</Heading>
         <p>
-          This preview uses exact integer wire values. Signing remains disabled
-          until a reviewed testnet registry and wallet connector exist.
+          This preview uses exact integer wire values. Signing stays disabled:
+          no wallet connector is integrated; the executed transactions are
+          recorded in docs/testnet-journey.md.
         </p>
       </div>
       <dl className="operator-summary">

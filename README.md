@@ -14,7 +14,7 @@ contract, the reconciliation tooling, a truthful web workspace, and the public
 evidence for all of it.
 
 - **Live demo:** <https://super-user-root.github.io/CommonsOps/> — the
-  fixture-backed workspace, no wallet or setup needed
+  workspace rendering the recorded live journey, no wallet or setup needed
 - **Track:** Social Money (`social`)
 - **Network:** NEAR testnet only (no mainnet deployment)
 - **License:** [MIT](LICENSE)
@@ -101,9 +101,9 @@ flowchart TB
 
 The same workspace is live at
 <https://super-user-root.github.io/CommonsOps/> — a static build of this
-repository's fixture journey, no wallet or setup needed. Locally, `pnpm
+repository's recorded live journey, no wallet or setup needed. Locally, `pnpm
 start` renders the identical pages. The app is honest by design: every stage
-is labeled as an immutable fixture snapshot, and it performs no RPC and no
+is labeled as an immutable recorded snapshot, and it performs no RPC and no
 transactions.
 
 ![Operator stage: unsigned intent previews](demo/screenshots/03-operator.png)
@@ -119,16 +119,17 @@ receipt renders `PENDING_PAYMENT_EVIDENCE`. Approval alone is not payment.
 ![Verified payout: derived PAID with provenance](demo/screenshots/06-reviewer-paid.png)
 
 **Verified payout** — a submitted, linked cycle whose `PAID` state is
-derived from receipt data through the production model. This frame uses the
-authentic proposal-63 RPC fixture; the same adapter logic reconciled the real
-testnet payout in the [evidence table](#live-onchain-evidence-testnet) below.
+derived from receipt data through the production model. This frame is the
+real recorded proposal-0 payout: the adapter derives `PAID` from the recorded
+receipt graph of transaction `ApRvPUsw…` — the same journey documented in the
+[evidence table](#live-onchain-evidence-testnet) below.
 
 ## Explore without running anything
 
 A judge can verify the project end to end without cloning:
 
 1. Open the live workspace:
-   <https://super-user-root.github.io/CommonsOps/> — the fixture-backed
+   <https://super-user-root.github.io/CommonsOps/> — the recorded
    operator/contributor/reviewer journey, no setup.
 2. Read the [evidence table](#live-onchain-evidence-testnet) below — every
    row is a finalized testnet transaction with an explorer link.
@@ -167,9 +168,11 @@ faucet is needed.
    **`APPLIED` / adapter state `PAID`**, with the store snapshot written under
    `deployments/testnet/`. Read-only: signs nothing, spends nothing; re-runs
    re-derive the same record from chain data.
-5. Run `pnpm start` and open `http://127.0.0.1:3000` — see the fixture-backed
-   workspace that renders the same journey (operator, contributor, reviewer)
-   with unsigned intent previews and honest state handling. The web workspace
+5. Run `pnpm start` and open `http://127.0.0.1:3000` — see the workspace
+   rendering the recorded live journey (operator, contributor, reviewer) with
+   exact recorded onchain values — template 0, cycle 0:0, claimant
+   `commonsops.testnet`, real PR #17 evidence, and the real proposal-0 payout —
+   plus unsigned intent previews and honest state handling. The web workspace
    performs no live RPC and no transactions by design.
 6. Run `node --test tests/e2e/e2e-replay.test.ts` — see the offline
    end-to-end replay suite pass: happy path, proposal/evidence-reuse
@@ -264,9 +267,11 @@ mainnet is an operational decision, not a code change — the network is a
 configuration boundary, and mainnet reads fail closed by design.
 
 **Why is the web workspace fixture-backed?**
-By design: it renders the reviewed intent previews and state handling without
-wallets, RPC, or fabricated network results. All live verification happens in
-the read-only scripts and the recorded journey, where claims can be checked.
+By design: it renders the recorded live journey — the exact recorded onchain
+data imported in place — without wallets, RPC, or fabricated network results.
+Every displayed value comes from the recorded journey, and all live
+verification happens in the read-only scripts, where claims can be re-checked
+against the chain.
 
 ## Repository layout
 
@@ -277,7 +282,7 @@ Where to start reading, per area:
 | `contracts/registry`   | [`src/lib.rs`](contracts/registry/src/lib.rs)                                                                                      | near-sdk Rust contract: templates, deterministic cycles, claims, immutable evidence, one-time proposal links (58 tests in [`src/tests.rs`](contracts/registry/src/tests.rs)) |
 | `packages/domain`      | [`src/index.ts`](packages/domain/src/index.ts)                                                                                     | cycle/claim/evidence state machine shared by all packages                                                                                                                    |
 | `packages/near`        | [`src/reconciliation.ts`](packages/near/src/reconciliation.ts), [`src/proposal-builder.ts`](packages/near/src/proposal-builder.ts) | causal payout derivation (`PAID` from receipt graphs); pinned Sputnik profiles and exact proposal construction                                                               |
-| `apps/web`             | [`app/page.tsx`](apps/web/app/page.tsx)                                                                                            | fixture-backed Next.js workspace (operator / contributor / reviewer); no RPC by design                                                                                       |
+| `apps/web`             | [`app/page.tsx`](apps/web/app/page.tsx)                                                                                            | Next.js workspace rendering the recorded journey (operator / contributor / reviewer); no RPC by design                                                                       |
 | `scripts/`             | [`smoke-testnet.mjs`](scripts/smoke-testnet.mjs), [`reconcile-live.mjs`](scripts/reconcile-live.mjs)                               | read-only live verification runners                                                                                                                                          |
 | `tests/`               | [`e2e/e2e-replay.test.ts`](tests/e2e/e2e-replay.test.ts)                                                                           | offline deterministic e2e replay: conflicts, idempotency, convergence                                                                                                        |
 | `docs/`                | [`testnet-journey.md`](docs/testnet-journey.md)                                                                                    | journey record, command reference, security findings, release verification                                                                                                   |
