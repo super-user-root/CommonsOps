@@ -122,16 +122,19 @@ The web workspace (`apps/web`) now has a live section alongside the recorded
 journey stages:
 
 - **Live reads (no wallet needed):** the browser performs read-only JSON-RPC
-  `query` calls to `https://rpc.testnet.near.org` at final blocks and renders
-  template 0, the latest cycle (0:0), the next period's cycle when the
-  operator materializes it, and `foundation_status`. Every read failure is
-  shown as a named error; no fallback data is invented.
+  `query` calls to `https://rpc.testnet.near.org` at final blocks, enumerates
+  every registered template (sequential ids until the registry returns none,
+  capped at 16), and renders each active template with its latest existing
+  cycle and its next period — plus `foundation_status`. Every read failure is
+  shown as a named error (per template, not a global failure); no fallback
+  data is invented.
 - **Wallet-signed contributor transactions:** with a testnet wallet connected
   (official `@near-wallet-selector` 10.1.4: MyNearWallet, Meteor, Here), the
   reviewed intent construction (`claim_cycle`, `submit_evidence`,
-  `release_claim`, `expire_cycle_or_claim`) becomes sendable against the live
-  latest cycle — zero attached deposit and 100 TGas prepaid gas, the exact
-  wire values of the recorded journey above. Submitted transactions link to
+  `release_claim`, `expire_cycle_or_claim`) becomes sendable per active
+  template against that template's newest live cycle — zero attached deposit
+  and 100 TGas prepaid gas, the exact wire values of the recorded journey
+  above. Submitted transactions link to
   `https://explorer.testnet.near.org/transactions/<hash>`, and a wallet
   dismissal is reported honestly as "no request sent".
 - **Still out of the app:** operator (manager) methods stay display-only in

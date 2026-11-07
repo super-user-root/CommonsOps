@@ -5,6 +5,10 @@
 // honest — loading, named errors, wallet rejection ("no request sent"), and
 // submitted transactions with explorer links. No simulated success, no
 // fabricated data, and the DAO payout flow stays out of the app.
+//
+// Every registered template is enumerated (sequential ids until the registry
+// returns none, capped); each template gets its own card group and its own
+// wallet-signed contributor actions bound to that template's live cycles.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Evidence } from "@commonsops/domain";
@@ -21,8 +25,9 @@ import {
 import { assertTestnet } from "../../lib/live/network.ts";
 import {
   fetchLiveRegistrySnapshot,
-  LATEST_PERIOD_INDEX,
+  type LiveCycleRead,
   type LiveRegistrySnapshot,
+  type LiveTemplateRead,
 } from "../../lib/live/registry-reads.ts";
 import { LiveRpcError } from "../../lib/live/rpc.ts";
 import {
@@ -109,13 +114,6 @@ export function LiveRegistrySection({
 }) {
   const wallet = useLiveWallet();
   const [readState, setReadState] = useState<ReadState>({ status: "LOADING" });
-  const [derived, setDerived] = useState<DerivedActions | null>(null);
-  const [derivedError, setDerivedError] = useState<{
-    code: string;
-    message: string;
-  } | null>(null);
-  const [evidenceDraft, setEvidenceDraft] = useState(EMPTY_EVIDENCE_DRAFT);
-  const [requestStates, setRequestStates] = useState(IDLE_REQUESTS);
 
   const config = useMemo(() => assertTestnet("testnet"), []);
 
@@ -138,19 +136,178 @@ export function LiveRegistrySection({
   }, [refresh]);
 
   const snapshot = readState.status === "READY" ? readState.snapshot : null;
-  // The actions target the newest live cycle that exists: the next period's
-  // cycle once materialized, otherwise the latest recorded one.
-  const actionableCycle = snapshot
-    ? (snapshot.nextCycle ?? snapshot.latestCycle)
-    : null;
+  const managerId = useMemo(() => {
+    for (const read of snapshot?.templates ?? []) {
+      if (read.kind === "READY") return read.template.manager_id;
+    }
+    return null;
+  }, [snapshot]);
+
+  return (
+    <section
+      className="live-section section-shell"
+      id="live-registry"
+      aria-labelledby="live-registry-heading"
+    >
+      <div className="section-intro split-intro">
+        <div>
+          <p className="eyebrow">
+            Live registry · NEAR testnet — connect a wallet to interact
+          </p>
+          <h2 id="live-registry-heading">Live registry, same rules.</h2>
+        </div>
+        <p>
+          This section reads the deployed registry{" "}
+          <code>{registryAccountId}</code> directly from your browser via
+          read-only JSON-RPC at NEAR testnet final blocks — no wallet needed.
+          Every registered template is enumerated, each with its latest existing
+          cycle and its next period. Connect a testnet wallet and each active
+          template's contributor actions become sendable: your wallet signs, the
+          transaction goes to the registry, and the result links to the
+          explorer. The DAO payout flow stays outside this app (see{" "}
+          <a href="https://github.com/super-user-root/CommonsOps/blob/main/docs/testnet-journey.md">
+            docs/testnet-journey.md
+          </a>
+          ).
+        </p>
+      </div>
+
+      <div className="live-meta" role="status" aria-live="polite">
+        {readState.status === "LOADING" ? (
+          <p>Querying {registryAccountId} at a NEAR testnet final block…</p>
+        ) : null}
+        {readState.status === "ERROR" ? (
+          <p className="live-error" role="alert">
+            Live read failed ({readState.code}): {readState.message} No fallback
+            data is shown.
+          </p>
+        ) : null}
+        {snapshot ? (
+          <>
+            <p>
+              Observed final block{" "}
+              <span className="exact-value">{snapshot.block.height}</span> at{" "}
+              <span className="exact-value">
+                {snapshot.block.timestampNs} ns
+              </span>{" "}
+              ({nsToDate(snapshot.block.timestampNs)}). Read-only JSON-RPC to{" "}
+              <code>{config.nodeUrl}</code>. Foundation status:{" "}
+              <code>{snapshot.foundationStatus}</code>
+              {snapshot.enumerationComplete
+                ? ""
+                : " — template enumeration stopped at the cap; more templates may exist onchain."}
+            </p>
+          </>
+        ) : null}
+        <button
+          className="button secondary"
+          type="button"
+          onClick={() => void refresh()}
+        >
+          {readState.status === "LOADING" ? "Reading…" : "Re-read live state"}
+        </button>
+      </div>
+
+      {snapshot
+        ? snapshot.templates.map((read) =>
+            read.kind === "READY" ? (
+              <LiveTemplateGroup
+                key={read.templateId}
+                read={read}
+                registryAccountId={registryAccountId}
+                observedBlockTimestampNs={snapshot.block.timestampNs}
+                onSent={() => void refresh()}
+              />
+            ) : (
+              <article
+                className="live-card live-template-error"
+                key={read.templateId}
+                role="alert"
+              >
+                <h3>Template {read.templateId} — read failed</h3>
+                <p>
+                  {read.code}: {read.message} No fallback data is shown, and
+                  templates after this one were not read. Re-read the live state
+                  to try again.
+                </p>
+              </article>
+            ),
+          )
+        : null}
+
+      <div className="live-grid">
+        <article className="live-card" aria-labelledby="live-operator-heading">
+          <h3 id="live-operator-heading">Operator methods — display-only</h3>
+          <p>
+            <code>create_template</code>, <code>materialize_cycle</code>,{" "}
+            <code>set_template_active</code>, <code>skip_expired_periods</code>{" "}
+            and <code>link_proposal</code> belong to the registry manager ({" "}
+            {managerId ?? "onchain manager"}). They stay display-only in this
+            workspace; the contract enforces manager authorization onchain
+            regardless of what any UI offers.
+          </p>
+          {wallet.accountId && managerId ? (
+            <p>
+              {wallet.accountId === managerId
+                ? "The connected account is the registry manager. These methods still stay display-only in this workspace."
+                : "The connected account is not the registry manager."}
+            </p>
+          ) : null}
+        </article>
+
+        <article className="live-card" aria-labelledby="live-dao-heading">
+          <h3 id="live-dao-heading">DAO payout — not in this app</h3>
+          <p>
+            The Sputnik DAO keeps custody and approves payouts inside its own
+            governance. CommonsOps never holds funds and this app never
+            simulates a payout: a DAO member creates the transfer proposal in
+            the DAO, and the registry links it one-time onchain. The recorded
+            end-to-end payout is documented in{" "}
+            <code>docs/testnet-journey.md</code> and rendered as the recorded
+            reviewer stage below.
+          </p>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function LiveTemplateGroup({
+  read,
+  registryAccountId,
+  observedBlockTimestampNs,
+  onSent,
+}: {
+  read: Extract<LiveTemplateRead, { kind: "READY" }>;
+  registryAccountId: string;
+  observedBlockTimestampNs: string;
+  onSent: () => void;
+}) {
+  const wallet = useLiveWallet();
+  const [derived, setDerived] = useState<DerivedActions | null>(null);
+  const [derivedError, setDerivedError] = useState<{
+    code: string;
+    message: string;
+  } | null>(null);
+  const [evidenceDraft, setEvidenceDraft] = useState(EMPTY_EVIDENCE_DRAFT);
+  const [requestStates, setRequestStates] = useState(IDLE_REQUESTS);
+
+  const template = read.template;
+  const templateId = read.templateId;
+  const paused = read.paused;
+  // The actions target this template's newest live cycle: the next period's
+  // cycle once materialized (e.g. the judge-demo 2:0 OPEN), otherwise the
+  // latest existing one.
+  const actionableCycle = paused
+    ? null
+    : (read.nextCycle?.cycle ?? read.latestCycle?.cycle ?? null);
 
   useEffect(() => {
-    if (!snapshot || !actionableCycle) {
+    if (!actionableCycle) {
       setDerived(null);
       return;
     }
     let cancelled = false;
-    const observedBlockTimestampNs = snapshot.block.timestampNs;
     const connectedAccountId = wallet.accountId;
     void (async () => {
       try {
@@ -212,8 +369,8 @@ export function LiveRegistrySection({
       cancelled = true;
     };
   }, [
-    snapshot,
     actionableCycle,
+    observedBlockTimestampNs,
     wallet.accountId,
     registryAccountId,
     evidenceDraft,
@@ -238,7 +395,7 @@ export function LiveRegistrySection({
         } as LiveRequestState,
       }));
       // Re-query the live registry so the view reflects the signed outcome.
-      void refresh();
+      onSent();
       return;
     }
     setRequestStates((previous) => ({
@@ -258,377 +415,314 @@ export function LiveRegistrySection({
     }));
   }
 
-  const template = snapshot?.template ?? null;
-  const nextPeriodIndex = template?.next_period_index ?? null;
-
   return (
-    <section
-      className="live-section section-shell"
-      id="live-registry"
-      aria-labelledby="live-registry-heading"
+    <article
+      className="live-template-group"
+      aria-labelledby={`live-template-${templateId}-heading`}
     >
-      <div className="section-intro split-intro">
-        <div>
-          <p className="eyebrow">
-            Live registry · NEAR testnet — connect a wallet to interact
-          </p>
-          <h2 id="live-registry-heading">Live registry, same rules.</h2>
-        </div>
-        <p>
-          This section reads the deployed registry{" "}
-          <code>{registryAccountId}</code> directly from your browser via
-          read-only JSON-RPC at NEAR testnet final blocks — no wallet needed.
-          Connect a testnet wallet and the contributor actions below become
-          sendable: your wallet signs, the transaction goes to the registry, and
-          the result links to the explorer. The DAO payout flow stays outside
-          this app (see{" "}
-          <a href="https://github.com/super-user-root/CommonsOps/blob/main/docs/testnet-journey.md">
-            docs/testnet-journey.md
-          </a>
-          ).
-        </p>
-      </div>
-
-      <div className="live-meta" role="status" aria-live="polite">
-        {readState.status === "LOADING" ? (
-          <p>Querying {registryAccountId} at a NEAR testnet final block…</p>
-        ) : null}
-        {readState.status === "ERROR" ? (
-          <p className="live-error" role="alert">
-            Live read failed ({readState.code}): {readState.message} No fallback
-            data is shown.
-          </p>
-        ) : null}
-        {snapshot ? (
-          <p>
-            Observed final block{" "}
-            <span className="exact-value">{snapshot.block.height}</span> at{" "}
-            <span className="exact-value">{snapshot.block.timestampNs} ns</span>{" "}
-            ({nsToDate(snapshot.block.timestampNs)}). Read-only JSON-RPC to{" "}
-            <code>{config.nodeUrl}</code>.
-          </p>
-        ) : null}
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() => void refresh()}
+      <div className="live-grid">
+        <article
+          className="live-card"
+          aria-labelledby={`live-template-${templateId}-heading`}
         >
-          {readState.status === "LOADING" ? "Reading…" : "Re-read live state"}
-        </button>
-      </div>
+          <h3 id={`live-template-${templateId}-heading`}>
+            Template {template.id} — {template.input.title}
+            {paused ? " (paused)" : ""}
+          </h3>
+          <p>{template.input.description}</p>
+          <dl className="live-facts">
+            <div>
+              <dt>Manager (operator)</dt>
+              <dd>{template.manager_id}</dd>
+            </div>
+            <div>
+              <dt>Active</dt>
+              <dd>{template.active ? "yes" : "no"}</dd>
+            </div>
+            <div>
+              <dt>DAO (payout approver)</dt>
+              <dd>{template.input.dao_account_id}</dd>
+            </div>
+            <div>
+              <dt>Payout per cycle</dt>
+              <dd>
+                {template.input.amount_yocto} yoctoNEAR{" "}
+                <small>
+                  ({formatYoctoNearExact(template.input.amount_yocto)})
+                </small>
+              </dd>
+            </div>
+            <div>
+              <dt>Interval</dt>
+              <dd>{template.input.interval_ns} ns</dd>
+            </div>
+            <div>
+              <dt>Work window</dt>
+              <dd>{template.input.work_window_ns} ns</dd>
+            </div>
+            <div>
+              <dt>Claim duration</dt>
+              <dd>{template.input.claim_duration_ns} ns</dd>
+            </div>
+            <div>
+              <dt>Next period to materialize</dt>
+              <dd>{template.next_period_index}</dd>
+            </div>
+          </dl>
+        </article>
 
-      {snapshot && template ? (
-        <div className="live-grid">
+        {paused ? (
           <article
             className="live-card"
-            aria-labelledby="live-template-heading"
+            aria-labelledby={`live-paused-${templateId}-heading`}
           >
-            <h3 id="live-template-heading">
-              Template {template.id} — {template.input.title}
-            </h3>
-            <p>{template.input.description}</p>
-            <dl className="live-facts">
-              <div>
-                <dt>Manager (operator)</dt>
-                <dd>{template.manager_id}</dd>
-              </div>
-              <div>
-                <dt>Active</dt>
-                <dd>{template.active ? "yes" : "no"}</dd>
-              </div>
-              <div>
-                <dt>DAO (payout approver)</dt>
-                <dd>{template.input.dao_account_id}</dd>
-              </div>
-              <div>
-                <dt>Payout per cycle</dt>
-                <dd>
-                  {template.input.amount_yocto} yoctoNEAR{" "}
-                  <small>
-                    ({formatYoctoNearExact(template.input.amount_yocto)})
-                  </small>
-                </dd>
-              </div>
-              <div>
-                <dt>Interval</dt>
-                <dd>{template.input.interval_ns} ns</dd>
-              </div>
-              <div>
-                <dt>Work window</dt>
-                <dd>{template.input.work_window_ns} ns</dd>
-              </div>
-              <div>
-                <dt>Claim duration</dt>
-                <dd>{template.input.claim_duration_ns} ns</dd>
-              </div>
-              <div>
-                <dt>Next period to materialize</dt>
-                <dd>{template.next_period_index}</dd>
-              </div>
-            </dl>
-            <p className="live-status-line">
-              <code>{snapshot.foundationStatus}</code>
-            </p>
-          </article>
-
-          <article
-            className="live-card"
-            aria-labelledby="live-latest-cycle-heading"
-          >
-            <h3 id="live-latest-cycle-heading">
-              {snapshot.latestCycle
-                ? cycleHeading(snapshot.latestCycle)
-                : `Cycle ${LATEST_PERIOD_INDEX === "0" ? `0:${LATEST_PERIOD_INDEX}` : "0:0"}`}
-            </h3>
-            {snapshot.latestCycle ? (
-              <LiveCycleFacts cycle={snapshot.latestCycle} />
-            ) : (
-              <p>No cycle exists for period 0.</p>
-            )}
-          </article>
-
-          <article
-            className="live-card"
-            aria-labelledby="live-next-cycle-heading"
-          >
-            <h3 id="live-next-cycle-heading">
-              Period {nextPeriodIndex ?? "—"}
-            </h3>
-            {snapshot.nextCycle ? (
-              <LiveCycleFacts cycle={snapshot.nextCycle} />
-            ) : (
-              <p>
-                No cycle for period {nextPeriodIndex ?? "?"} yet — nothing new
-                is claimable right now. The registry operator materializes the
-                next due period onchain; this view re-reads the registry and
-                will show it here.
-              </p>
-            )}
-          </article>
-        </div>
-      ) : null}
-
-      <article
-        className="live-card live-actions"
-        aria-labelledby="live-actions-heading"
-      >
-        <h3 id="live-actions-heading">Contributor actions (wallet-signed)</h3>
-        {!snapshot || !actionableCycle ? (
-          <p>
-            Live actions need a successful registry read.{" "}
-            {readState.status === "ERROR"
-              ? "Fix the read error above and retry."
-              : "Wait for the read to finish."}
-          </p>
-        ) : !wallet.accountId ? (
-          <>
+            <h3 id={`live-paused-${templateId}-heading`}>Paused template</h3>
             <p>
-              Connect a testnet wallet to interact. The read-only views above
-              work without one. When connected, actions target{" "}
-              {cycleHeading(actionableCycle)} and your wallet signs every
-              transaction — nothing is ever signed or sent for you.
+              This template is paused onchain, so its cycles were not read and
+              it offers no contributor actions here. The registry manager can
+              resume it; re-read the live state after that to see its cycles.
             </p>
-            <button
-              className="button primary"
-              type="button"
-              onClick={() => void wallet.connect()}
-            >
-              Connect testnet wallet
-            </button>
-          </>
-        ) : derivedError ? (
-          <p role="alert">
-            Live action derivation failed ({derivedError.code}):{" "}
-            {derivedError.message} No transaction controls are shown for
-            unverified state.
-          </p>
-        ) : !derived ? (
-          <p>Deriving reviewed intents from the live cycle…</p>
+          </article>
         ) : (
           <>
-            <p>
-              Actions target {cycleHeading(actionableCycle)} (
-              {derived.view.lifecycle.toLowerCase()} at the observed final
-              block). Availability follows the reviewed construction; the
-              contract enforces the rest onchain. Zero attached deposit on every
-              contributor method.
-            </p>
-            <div className="live-action-grid">
-              {CONTRIBUTOR_METHODS.map((method) => {
-                const intent = derived.intents[method];
-                const availability = derived.view.actions[method];
-                const requestState = requestStates[method];
-                const sendable =
-                  intent !== undefined &&
-                  intent.actionAllowed &&
-                  availability.allowed &&
-                  !(method === "submit_evidence" && derived.evidenceError);
-                return (
-                  <div className="live-action" key={method}>
-                    <h4>{METHOD_LABELS[method]}</h4>
-                    <p>
-                      {availability.reason ??
-                        "Available to your connected account."}
-                    </p>
-                    {method === "submit_evidence" && availability.allowed ? (
-                      <div className="live-evidence-inputs">
-                        <label>
-                          Repository owner
-                          <input
-                            type="text"
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={evidenceDraft.repositoryOwner}
-                            onChange={(event) =>
-                              setEvidenceDraft((draft) => ({
-                                ...draft,
-                                repositoryOwner: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          Repository name
-                          <input
-                            type="text"
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={evidenceDraft.repositoryName}
-                            onChange={(event) =>
-                              setEvidenceDraft((draft) => ({
-                                ...draft,
-                                repositoryName: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          Pull request number
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={evidenceDraft.pullRequestNumber}
-                            onChange={(event) =>
-                              setEvidenceDraft((draft) => ({
-                                ...draft,
-                                pullRequestNumber: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          Commit SHA (40 hex characters)
-                          <input
-                            type="text"
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={evidenceDraft.commitSha}
-                            onChange={(event) =>
-                              setEvidenceDraft((draft) => ({
-                                ...draft,
-                                commitSha: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        {derived.evidenceError ? (
-                          <p className="live-error" role="alert">
-                            Evidence validation failed: {derived.evidenceError}
-                          </p>
-                        ) : null}
-                        {derived.evidencePreview ? (
-                          <dl className="evidence-preview">
-                            <div>
-                              <dt>Canonical URL</dt>
-                              <dd>{derived.evidencePreview.url}</dd>
-                            </div>
-                            <div>
-                              <dt>Canonical SHA-256</dt>
-                              <dd>{derived.evidencePreview.digest_sha256}</dd>
-                            </div>
-                          </dl>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    <button
-                      className="button primary"
-                      type="button"
-                      disabled={!sendable || requestState.status === "PENDING"}
-                      onClick={() => void handleSend(method)}
-                    >
-                      {requestState.status === "PENDING"
-                        ? "Waiting for wallet…"
-                        : METHOD_LABELS[method]}
-                    </button>
-                    <p
-                      className="live-request-state"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {describeLiveRequest(requestState)}
-                    </p>
-                    {requestState.status === "SUCCESS" ? (
-                      <p>
-                        <a
-                          href={requestState.explorerUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          View {requestState.method} on the testnet explorer
-                        </a>
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
+            <article
+              className="live-card"
+              aria-labelledby={`live-latest-${templateId}-heading`}
+            >
+              <h3 id={`live-latest-${templateId}-heading`}>
+                {read.latestCycle
+                  ? read.latestCycle.cycle
+                    ? cycleHeading(read.latestCycle.cycle)
+                    : `Period ${read.latestCycle.periodIndex}`
+                  : "No earlier cycle"}
+              </h3>
+              {read.latestCycle?.cycle ? (
+                <LiveCycleFacts cycle={read.latestCycle.cycle} />
+              ) : (
+                <p>
+                  {read.latestCycle
+                    ? `No cycle exists for period ${read.latestCycle.periodIndex} (it may have been skipped).`
+                    : "No period of this template has been materialized yet."}
+                </p>
+              )}
+            </article>
+
+            <article
+              className="live-card"
+              aria-labelledby={`live-next-${templateId}-heading`}
+            >
+              <h3 id={`live-next-${templateId}-heading`}>
+                {read.nextCycle?.cycle
+                  ? cycleHeading(read.nextCycle.cycle)
+                  : `Period ${read.template.next_period_index}`}
+              </h3>
+              {read.nextCycle?.cycle ? (
+                <LiveCycleFacts cycle={read.nextCycle.cycle} />
+              ) : (
+                <p>
+                  No cycle for period {read.template.next_period_index} yet —
+                  nothing new is claimable on this template right now. The
+                  registry operator materializes the next due period onchain;
+                  this view re-reads the registry and will show it here.
+                </p>
+              )}
+            </article>
           </>
         )}
-      </article>
-
-      <div className="live-grid">
-        <article className="live-card" aria-labelledby="live-operator-heading">
-          <h3 id="live-operator-heading">Operator methods — display-only</h3>
-          <p>
-            <code>create_template</code>, <code>materialize_cycle</code>,{" "}
-            <code>set_template_active</code>, <code>skip_expired_periods</code>{" "}
-            and <code>link_proposal</code> belong to the registry manager ({" "}
-            {template?.manager_id ?? "onchain manager"}). They stay display-only
-            in this workspace; the contract enforces manager authorization
-            onchain regardless of what any UI offers.
-          </p>
-          {wallet.accountId && template ? (
-            <p>
-              {wallet.accountId === template.manager_id
-                ? "The connected account is the registry manager. These methods still stay display-only in this workspace."
-                : "The connected account is not the registry manager."}
-            </p>
-          ) : null}
-        </article>
-
-        <article className="live-card" aria-labelledby="live-dao-heading">
-          <h3 id="live-dao-heading">DAO payout — not in this app</h3>
-          <p>
-            The Sputnik DAO keeps custody and approves payouts inside its own
-            governance. CommonsOps never holds funds and this app never
-            simulates a payout: a DAO member creates the transfer proposal in
-            the DAO, and the registry links it one-time onchain. The recorded
-            end-to-end payout is documented in{" "}
-            <code>docs/testnet-journey.md</code> and rendered as the recorded
-            reviewer stage below.
-          </p>
-        </article>
       </div>
-    </section>
+
+      {paused ? null : (
+        <article
+          className="live-card live-actions"
+          aria-labelledby={`live-actions-${templateId}-heading`}
+        >
+          <h3 id={`live-actions-${templateId}-heading`}>
+            Contributor actions for template {templateId} (wallet-signed)
+          </h3>
+          {!actionableCycle ? (
+            <p>
+              No cycle of this template can be acted on yet — the actions appear
+              once a cycle exists.
+            </p>
+          ) : !wallet.accountId ? (
+            <>
+              <p>
+                Connect a testnet wallet to interact. The read-only views above
+                work without one. When connected, actions target{" "}
+                {cycleHeading(actionableCycle)} and your wallet signs every
+                transaction — nothing is ever signed or sent for you.
+              </p>
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => void wallet.connect()}
+              >
+                Connect testnet wallet
+              </button>
+            </>
+          ) : derivedError ? (
+            <p role="alert">
+              Live action derivation failed ({derivedError.code}):{" "}
+              {derivedError.message} No transaction controls are shown for
+              unverified state.
+            </p>
+          ) : !derived ? (
+            <p>Deriving reviewed intents from the live cycle…</p>
+          ) : (
+            <>
+              <p>
+                Actions target {cycleHeading(actionableCycle)} (
+                {derived.view.lifecycle.toLowerCase()} at the observed final
+                block). Availability follows the reviewed construction; the
+                contract enforces the rest onchain. Zero attached deposit on
+                every contributor method.
+              </p>
+              <div className="live-action-grid">
+                {CONTRIBUTOR_METHODS.map((method) => {
+                  const intent = derived.intents[method];
+                  const availability = derived.view.actions[method];
+                  const requestState = requestStates[method];
+                  const sendable =
+                    intent !== undefined &&
+                    intent.actionAllowed &&
+                    availability.allowed &&
+                    !(method === "submit_evidence" && derived.evidenceError);
+                  return (
+                    <div className="live-action" key={method}>
+                      <h4>{METHOD_LABELS[method]}</h4>
+                      <p>
+                        {availability.reason ??
+                          "Available to your connected account."}
+                      </p>
+                      {method === "submit_evidence" && availability.allowed ? (
+                        <div className="live-evidence-inputs">
+                          <label>
+                            Repository owner
+                            <input
+                              type="text"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={evidenceDraft.repositoryOwner}
+                              onChange={(event) =>
+                                setEvidenceDraft((draft) => ({
+                                  ...draft,
+                                  repositoryOwner: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Repository name
+                            <input
+                              type="text"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={evidenceDraft.repositoryName}
+                              onChange={(event) =>
+                                setEvidenceDraft((draft) => ({
+                                  ...draft,
+                                  repositoryName: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Pull request number
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={evidenceDraft.pullRequestNumber}
+                              onChange={(event) =>
+                                setEvidenceDraft((draft) => ({
+                                  ...draft,
+                                  pullRequestNumber: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Commit SHA (40 hex characters)
+                            <input
+                              type="text"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={evidenceDraft.commitSha}
+                              onChange={(event) =>
+                                setEvidenceDraft((draft) => ({
+                                  ...draft,
+                                  commitSha: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          {derived.evidenceError ? (
+                            <p className="live-error" role="alert">
+                              Evidence validation failed:{" "}
+                              {derived.evidenceError}
+                            </p>
+                          ) : null}
+                          {derived.evidencePreview ? (
+                            <dl className="evidence-preview">
+                              <div>
+                                <dt>Canonical URL</dt>
+                                <dd>{derived.evidencePreview.url}</dd>
+                              </div>
+                              <div>
+                                <dt>Canonical SHA-256</dt>
+                                <dd>{derived.evidencePreview.digest_sha256}</dd>
+                              </div>
+                            </dl>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <button
+                        className="button primary"
+                        type="button"
+                        disabled={
+                          !sendable || requestState.status === "PENDING"
+                        }
+                        onClick={() => void handleSend(method)}
+                      >
+                        {requestState.status === "PENDING"
+                          ? "Waiting for wallet…"
+                          : METHOD_LABELS[method]}
+                      </button>
+                      <p
+                        className="live-request-state"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {describeLiveRequest(requestState)}
+                      </p>
+                      {requestState.status === "SUCCESS" ? (
+                        <p>
+                          <a
+                            href={requestState.explorerUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View {requestState.method} on the testnet explorer
+                          </a>
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </article>
+      )}
+    </article>
   );
 }
 
 function LiveCycleFacts({
   cycle,
 }: {
-  cycle: NonNullable<LiveRegistrySnapshot["latestCycle"]>;
+  cycle: NonNullable<LiveCycleRead["cycle"]>;
 }) {
   return (
     <>
