@@ -18,37 +18,43 @@ finalized causal receipt graph — never from a client-supplied flag.
 
 ## Screenshot map
 
-Each screenshot shows the fixture-backed web workspace (`pnpm start`, build of
-this repository). Stages 1–3 are separate immutable fixture snapshots of one
-journey, as the app's own banners state; the reviewer stage pairs the registry
-data with the authentic Sputnik proposal-63 RPC fixture
-(`tests/fixtures/sputnik/proposal-63-paid.json`) imported in place.
+Each screenshot shows the recorded-journey web workspace (`pnpm start`, build
+of this repository). Stages 1–3 are separate immutable snapshots of the
+recorded live journey, as the app's own banners state; the reviewer stage
+pairs the registry cycle with the recorded proposal-0 payout receipt graph
+(`apps/web/lib/fixtures/proposal-0-paid.json` — the recorded
+`EXPERIMENTAL_tx_status` response for transaction `ApRvPUsw…`) imported in
+place.
 
-| File                                        | Journey step                                                                                                                                                                                          | Live testnet evidence in `docs/testnet-journey.md`                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `screenshots/01-hero.png`                   | Product hero and the unsigned-fixture-preview banner (stages 1–3 are immutable snapshots; no wallet, RPC, or GitHub request)                                                                          | Journey overview (network `testnet`, registry `commonsops.testnet`, DAO `commonsops-dao.sputnikv2.testnet`)                                                                                                                                                                                                                                                                |
-| `screenshots/02-network-boundary.png`       | Connection boundary: testnet and mainnet are separate configurations, both unconfigured, reads and signing fail closed                                                                                | Same network facts; live operations stay in scripts (below)                                                                                                                                                                                                                                                                                                                |
-| `screenshots/03-operator.png`               | Stage 1 — operator defines the recurring work: unsigned `create_template` and `materialize_cycle` intent previews with exact integer wire values, signing disabled                                    | Journey steps 2–3: template `0` registration ([`FWqT2A6oT8xXRuVkmdxFQbigcLwG9Jao2DfGmie92WH7`](https://explorer.testnet.near.org/transactions/FWqT2A6oT8xXRuVkmdxFQbigcLwG9Jao2DfGmie92WH7)) and cycle `0:0` opened ([`3MV5x4hUjC8Z7uQmcdRJebiyUR4sq67dFJcnUo2nXJCt`](https://explorer.testnet.near.org/transactions/3MV5x4hUjC8Z7uQmcdRJebiyUR4sq67dFJcnUo2nXJCt))        |
-| `screenshots/04-contributor.png`            | Stage 2 — contributor claims and binds evidence: `CLAIMED` cycle with claimant = payout recipient (`chloe.testnet` fixture), recipient-binding panel, canonical GitHub evidence preview               | Journey steps 4–5: claim binds recipient ([`8LB4W2qWxaKsRRJMyfyw1NYWiDK6bDjh7ejyRKQ42tYe`](https://explorer.testnet.near.org/transactions/8LB4W2qWxaKsRRJMyfyw1NYWiDK6bDjh7ejyRKQ42tYe)) and immutable evidence submission ([`6sqUZaFfoLacYihADUmBSqKbMS7mxvBsQKcUbzfAWz99`](https://explorer.testnet.near.org/transactions/6sqUZaFfoLacYihADUmBSqKbMS7mxvBsQKcUbzfAWz99)) |
-| `screenshots/05-reviewer-approved-only.png` | Stage 3 — reviewer boundary: "Approved alone is not payment" (`PENDING_PAYMENT_EVIDENCE` without a finalized causal receipt graph), trust/authorization boundary                                      | Journey steps 6–7: DAO transfer proposal ([`CAX6EJvvN71BxTP8NDdwmrPiryYeRKcJXK3tPhfp591F`](https://explorer.testnet.near.org/transactions/CAX6EJvvN71BxTP8NDdwmrPiryYeRKcJXK3tPhfp591F)) and council approval ([`ApRvPUsw2d5gn3N4SxTe7Wbv7nPcJRDTtWc7j9LwAoP7`](https://explorer.testnet.near.org/transactions/ApRvPUsw2d5gn3N4SxTe7Wbv7nPcJRDTtWc7j9LwAoP7))              |
-| `screenshots/06-reviewer-paid.png`          | Stage 3 — verified cycle: `SUBMITTED` + `LINKED_IMMUTABLE` proposal, derived payment state `PAID` with full provenance (transaction hash, action receipt, payout receipt, evidence key, payout block) | Journey steps 7–9: payout receipt `EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2`, registry link ([`FkT3cB5KQpVHZYoXp7cMb3eWhQPYyvqeeXfbcT33yMX2`](https://explorer.testnet.near.org/transactions/FkT3cB5KQpVHZYoXp7cMb3eWhQPYyvqeeXfbcT33yMX2)), reconciliation `APPLIED` / `PAID`                                                                                         |
-| `screenshots/07-state-gallery.png`          | Honest state handling patterns (loading, empty/unconfigured, pending, error, verified fixture) — no live request ran                                                                                  | Design invariant: failed/unknown states never render as paid                                                                                                                                                                                                                                                                                                               |
-| `screenshots/08-truth-panel.png`            | "Implemented today" facts panel: journey data fixture-only, live registry not deployed in the web app, wallet signing disabled                                                                        | The live journey lives in `scripts/` and `docs/testnet-journey.md`, not in the browser                                                                                                                                                                                                                                                                                     |
+| File                                        | Journey step                                                                                                                                                                                                 | Live testnet evidence in `docs/testnet-journey.md`                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `screenshots/01-hero.png`                   | Product hero and the recorded-live-journey banner (stages 1–3 are immutable recorded snapshots; no wallet, RPC, or GitHub request)                                                                           | Journey overview (network `testnet`, registry `commonsops.testnet`, DAO `commonsops-dao.sputnikv2.testnet`)                                                                                                                                                                                                                                                                |
+| `screenshots/02-network-boundary.png`       | Connection boundary: testnet registry deployed (`commonsops.testnet`), mainnet isolated and unconfigured; no in-app RPC and no signing by design                                                             | Same network facts; live operations stay in scripts (below)                                                                                                                                                                                                                                                                                                                |
+| `screenshots/03-operator.png`               | Stage 1 — operator defines the recurring work: unsigned `create_template` and `materialize_cycle` intent previews with the exact recorded template-0 wire values, signing disabled                           | Journey steps 2–3: template `0` registration ([`FWqT2A6oT8xXRuVkmdxFQbigcLwG9Jao2DfGmie92WH7`](https://explorer.testnet.near.org/transactions/FWqT2A6oT8xXRuVkmdxFQbigcLwG9Jao2DfGmie92WH7)) and cycle `0:0` opened ([`3MV5x4hUjC8Z7uQmcdRJebiyUR4sq67dFJcnUo2nXJCt`](https://explorer.testnet.near.org/transactions/3MV5x4hUjC8Z7uQmcdRJebiyUR4sq67dFJcnUo2nXJCt))        |
+| `screenshots/04-contributor.png`            | Stage 2 — contributor claims and binds evidence: recorded `CLAIMED` cycle `0:0` with claimant = payout recipient (`commonsops.testnet`), recipient-binding panel, canonical GitHub evidence preview          | Journey steps 4–5: claim binds recipient ([`8LB4W2qWxaKsRRJMyfyw1NYWiDK6bDjh7ejyRKQ42tYe`](https://explorer.testnet.near.org/transactions/8LB4W2qWxaKsRRJMyfyw1NYWiDK6bDjh7ejyRKQ42tYe)) and immutable evidence submission ([`6sqUZaFfoLacYihADUmBSqKbMS7mxvBsQKcUbzfAWz99`](https://explorer.testnet.near.org/transactions/6sqUZaFfoLacYihADUmBSqKbMS7mxvBsQKcUbzfAWz99)) |
+| `screenshots/05-reviewer-approved-only.png` | Stage 3 — reviewer boundary: "Approved alone is not payment" (`PENDING_PAYMENT_EVIDENCE` without a finalized causal receipt graph), trust/authorization boundary                                             | Journey steps 6–7: DAO transfer proposal ([`CAX6EJvvN71BxTP8NDdwmrPiryYeRKcJXK3tPhfp591F`](https://explorer.testnet.near.org/transactions/CAX6EJvvN71BxTP8NDdwmrPiryYeRKcJXK3tPhfp591F)) and council approval ([`ApRvPUsw2d5gn3N4SxTe7Wbv7nPcJRDTtWc7j9LwAoP7`](https://explorer.testnet.near.org/transactions/ApRvPUsw2d5gn3N4SxTe7Wbv7nPcJRDTtWc7j9LwAoP7))              |
+| `screenshots/06-reviewer-paid.png`          | Stage 3 — verified cycle: real `SUBMITTED` + `LINKED_IMMUTABLE` proposal 0, derived payment state `PAID` with full provenance (transaction hash, action receipt, payout receipt, evidence key, payout block) | Journey steps 7–9: payout receipt `EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2`, registry link ([`FkT3cB5KQpVHZYoXp7cMb3eWhQPYyvqeeXfbcT33yMX2`](https://explorer.testnet.near.org/transactions/FkT3cB5KQpVHZYoXp7cMb3eWhQPYyvqeeXfbcT33yMX2)), reconciliation `APPLIED` / `PAID`                                                                                         |
+| `screenshots/07-state-gallery.png`          | Honest state handling patterns (loading, empty/unconfigured, pending, error, verified fixture) — no live request ran                                                                                         | Design invariant: failed/unknown states never render as paid                                                                                                                                                                                                                                                                                                               |
+| `screenshots/08-truth-panel.png`            | "Implemented today" facts panel: journey data = recorded live journey, live registry `commonsops.testnet` — deployed, wallet signing disabled                                                                | The live journey lives in `scripts/` and `docs/testnet-journey.md`, not in the browser                                                                                                                                                                                                                                                                                     |
 
 ## Provenance statement
 
-- The web workspace shown in every screenshot is fixture-backed **by design**:
-  it performs no RPC, no wallet signature, no GitHub request. The app's own
-  honesty banners are visible in the frames and were not cropped away.
+- The web workspace shown in every screenshot renders the recorded live
+  journey **by design**: it performs no RPC, no wallet signature, no GitHub
+  request. Every displayed value is the exact recorded onchain data imported
+  in place. The app's own honesty banners are visible in the frames and were
+  not cropped away.
 - The command output recorded in the next section is verbatim from real
   read-only commands run while producing this folder (see "Reproduce" below).
   It is not a mockup; re-running the commands re-derives the same values
   from the live chain.
-- Screenshot `06-reviewer-paid.png` renders the authentic proposal-63 RPC
-  fixture (`tests/fixtures/sputnik/proposal-63-paid.json`) through the
+- Screenshot `06-reviewer-paid.png` renders the recorded proposal-0 payout
+  receipt graph (`apps/web/lib/fixtures/proposal-0-paid.json`, the recorded
+  `EXPERIMENTAL_tx_status` response for transaction `ApRvPUsw…`) through the
   production `buildReviewerModel` path; its provenance line in the UI states
-  this explicitly. The recorded live journey that the same adapter logic
-  reconciled to `PAID` is documented in `docs/testnet-journey.md`.
+  this explicitly and names `node scripts/reconcile-live.mjs` as the
+  re-derivation command. The same recorded journey is documented in
+  `docs/testnet-journey.md`.
 
 ## Actual command output recorded for the demo
 
@@ -81,7 +87,7 @@ pnpm install --frozen-lockfile
 pnpm verify:offline                                # format/syntax, TypeScript, unit tests, Rust tests, production build, WASM, local HTTP
 node scripts/reconcile-live.mjs                    # read-only live RPC: APPLIED / PAID
 node scripts/smoke-testnet.mjs commonsops.testnet  # read-only live RPC: onchain deployment checks
-pnpm start                                         # the fixture-backed web workspace on http://127.0.0.1:3000
+pnpm start                                         # the recorded-journey web workspace on http://127.0.0.1:3000
 ```
 
 The two scripts sign nothing and spend nothing; each run re-derives its
@@ -104,5 +110,5 @@ results from the live chain. See `docs/testnet-journey.md` and
 There is no hosted demo deployment. The public demo artifacts are the
 screenshots in this folder — attached to the demo post — and the repository
 itself: the README's do-X steps let a judge open and run the working demo
-without credentials — the fixture-backed workspace (`pnpm start`) and the two
-read-only live verification commands above.
+without credentials — the recorded-journey workspace (`pnpm start`) and the
+two read-only live verification commands above.

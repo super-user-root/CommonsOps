@@ -180,7 +180,11 @@ export function ReviewerPanel({
             <dt>Profile</dt>
             <dd>
               {model.profile.version} · {model.profile.codeHash}
-              {model.profileSupported ? " · supported" : " · unsupported"}
+              {model.profileSupported
+                ? " · supported"
+                : model.profileVerifiable
+                  ? " · payout verification supported · unsigned request builder unavailable"
+                  : " · unsupported"}
             </dd>
           </div>
           <div>

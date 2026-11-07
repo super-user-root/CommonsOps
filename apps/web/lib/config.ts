@@ -26,14 +26,18 @@ export interface AppNetworkConfig {
   readonly deployed: boolean;
 }
 
+// The testnet registry is deployed and the full journey is recorded in
+// docs/testnet-journey.md. This workspace still performs no live RPC: the
+// recorded values are imported as fixture data. Mainnet stays isolated and
+// unconfigured, so its reads and signing keep failing closed.
 export const networkConfigs: Readonly<Record<Network, AppNetworkConfig>> =
   Object.freeze({
     TESTNET: Object.freeze({
       network: "TESTNET",
       rpcUrl: "https://rpc.testnet.near.org",
       explorerUrl: "https://testnet.nearblocks.io",
-      registryAccountId: null,
-      deployed: false,
+      registryAccountId: "commonsops.testnet",
+      deployed: true,
     }),
     MAINNET: Object.freeze({
       network: "MAINNET",

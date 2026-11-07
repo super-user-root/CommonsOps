@@ -1,5 +1,5 @@
 import type { Cycle } from "@commonsops/domain";
-import paidProposal63ReceiptGraph from "../../../tests/fixtures/sputnik/proposal-63-paid.json" with { type: "json" };
+import recordedProposal0ReceiptGraph from "./fixtures/proposal-0-paid.json" with { type: "json" };
 import {
   contributorCycleIntent,
   deriveContributorCycleView,
@@ -24,21 +24,28 @@ import {
   type ReviewerRequestState,
 } from "../src/features/reviewer/reviewer.ts";
 
-const templateId = "7";
-const periodIndex = "3";
-const claimantId = "chloe.testnet";
-const daoAccountId = "marmaj.sputnikv2.testnet";
-const payoutAmountYocto = "81900000000000000000000000";
+// Every value below is the exact recorded onchain data of the executed
+// CommonsOps testnet journey documented in docs/testnet-journey.md
+// (registry commonsops.testnet, template 0, cycle 0:0, DAO proposal 0).
+const templateId = "0";
+const periodIndex = "0";
+const claimantId = "commonsops.testnet";
+const daoAccountId = "commonsops-dao.sputnikv2.testnet";
+const payoutAmountYocto = "500000000000000000000000";
+const registryAccountId = "commonsops.testnet";
 
 export const fixtureJourneyConstants = Object.freeze({
   templateId,
   periodIndex,
-  observedBlockTimestampNs: "1795558800000000000",
-  fixtureSource: "tests/fixtures/sputnik/proposal-63-paid.json",
-  transactionHash: "2Nk6t5MJJ6uRUrpoNcY7Hhuaupw9do7ybvxpxZYYS1Dm",
-  actionReceiptId: "4Rag51CLP56uPZqovgMzEiNKNeSLF8Bn7G3WiNhuGtuJ",
-  payoutReceiptId: "H7tr1j2QAcFx3ibwqKeSHtBwpiaFYRaUfPbj6YzBddgJ",
-  blockHash: "8VY8wMxeLmDnncFcU6bpECgJfycypv22qAGm1HeNtygy",
+  // Block-header timestamp of the recorded claim_cycle execution block
+  // (8cpCnL53LBMi5N2TKTsG6SLj5EwpgUPN7vpUo4YRAAci, journey step 4); at this
+  // instant the recorded claim was live.
+  observedBlockTimestampNs: "1793910672509596700",
+  fixtureSource: "apps/web/lib/fixtures/proposal-0-paid.json",
+  transactionHash: "ApRvPUsw2d5gn3N4SxTe7Wbv7nPcJRDTtWc7j9LwAoP7",
+  actionReceiptId: "kBH4oqQh8mMy6oGW727XZmQgVobUv1r8r11ExMrsPro",
+  payoutReceiptId: "EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2",
+  blockHash: "5ukLMpiXjTW9y9bojhM2cPRgD25v9fMa7MkKxFat1Se6",
 });
 
 export type StatePatternKey =
@@ -55,7 +62,7 @@ export interface FixtureJourney {
   readonly provenance: {
     readonly mode: "FIXTURE_ONLY";
     readonly network: "TESTNET";
-    readonly registryDeployment: null;
+    readonly registryDeployment: string | null;
     readonly walletAvailable: false;
     readonly liveReadsRan: false;
     readonly notice: string;
@@ -99,14 +106,14 @@ function claimedCycleFixture(): Cycle {
   return deepFreeze({
     key: { template_id: templateId, period_index: periodIndex },
     status: "CLAIMED",
-    opens_at_ns: "1795555200000000000",
-    deadline_at_ns: "1795987200000000000",
+    opens_at_ns: "1793910183011867400",
+    deadline_at_ns: "1794342183011867400",
     dao_account_id: daoAccountId,
     amount_yocto: payoutAmountYocto,
     claim: {
       claimant_id: claimantId,
       payout_recipient_id: claimantId,
-      expires_at_ns: "1795641600000000000",
+      expires_at_ns: "1794083472509596599",
     },
     evidence: null,
     submitted_at_ns: null,
@@ -120,31 +127,33 @@ function submittedLinkedCycleFixture(
   return deepFreeze({
     key: { template_id: templateId, period_index: periodIndex },
     status: "SUBMITTED",
-    opens_at_ns: "1795555200000000000",
-    deadline_at_ns: "1795987200000000000",
+    opens_at_ns: "1793910183011867400",
+    deadline_at_ns: "1794342183011867400",
     dao_account_id: daoAccountId,
     amount_yocto: payoutAmountYocto,
     claim: {
       claimant_id: claimantId,
       payout_recipient_id: claimantId,
-      expires_at_ns: "1795641600000000000",
+      expires_at_ns: "1794083472509596599",
     },
     evidence: { ...evidence },
-    submitted_at_ns: "1795562400000000000",
+    submitted_at_ns: "1793910689442132732",
     proposal_link: {
       key: {
         network: "TESTNET",
         dao_account_id: daoAccountId,
-        proposal_id: "63",
+        proposal_id: "0",
       },
-      linked_at_ns: "1795566000000000000",
+      linked_at_ns: "1793910838179857287",
     },
   } satisfies Cycle);
 }
 
-function proposal63Fixture() {
+function proposal0Fixture() {
+  // Exact recorded kind/status of DAO proposal 0 (docs/testnet-journey.md
+  // step 6 and the recorded act_proposal VoteApprove transaction).
   return deepFreeze({
-    id: 63,
+    id: 0,
     status: "Approved",
     kind: {
       Transfer: {
@@ -158,26 +167,31 @@ function proposal63Fixture() {
 }
 
 /**
- * Builds deterministic server-rendered snapshots. It never reads the clock,
- * generates identifiers, performs RPC, or mutates the imported P3-T01 fixture.
+ * Builds deterministic server-rendered snapshots of the recorded live
+ * testnet journey (docs/testnet-journey.md). It never reads the clock,
+ * generates identifiers, performs RPC, or mutates the imported fixture.
  */
 export async function buildFixtureJourney(): Promise<FixtureJourney> {
   const draft = deepFreeze({
     daoAccountId,
-    title: "Recurring public documentation maintenance",
+    title: "Public documentation maintenance",
     description:
-      "Review and update the community's public contributor documentation.",
-    startAtNs: "1793740800000000000",
+      "Recurring maintenance of the CommonsOps public documentation: review and merge community pull requests.",
+    startAtNs: "1793910183011867400",
     intervalNs: "604800000000000",
     workWindowNs: "432000000000000",
-    claimDurationNs: "86400000000000",
+    claimDurationNs: "172800000000000",
     amountYocto: payoutAmountYocto,
   } satisfies CreateTemplateDraft);
 
   const operatorIntents = deepFreeze([
-    createTemplateIntent(null, draft, TEMPLATE_MIN_DEPOSIT_YOCTO.toString()),
+    createTemplateIntent(
+      registryAccountId,
+      draft,
+      TEMPLATE_MIN_DEPOSIT_YOCTO.toString(),
+    ),
     templateActionIntent(
-      null,
+      registryAccountId,
       "materialize_cycle",
       templateId,
       undefined,
@@ -187,10 +201,10 @@ export async function buildFixtureJourney(): Promise<FixtureJourney> {
 
   const contributorCycle = claimedCycleFixture();
   const evidenceDraft = deepFreeze({
-    repositoryOwner: "Example",
-    repositoryName: "Docs",
-    pullRequestNumber: "42",
-    commitSha: "ab".repeat(20),
+    repositoryOwner: "super-user-root",
+    repositoryName: "CommonsOps",
+    pullRequestNumber: "17",
+    commitSha: "1032733c2115b9e9c038d50617f6e151ac8bd59d",
   } satisfies GithubEvidenceDraft);
   const observedBlockTimestampNs =
     fixtureJourneyConstants.observedBlockTimestampNs;
@@ -203,28 +217,28 @@ export async function buildFixtureJourney(): Promise<FixtureJourney> {
         claimantId,
       ),
       contributorCycleIntent(
-        null,
+        registryAccountId,
         "claim_cycle",
         contributorCycle,
         observedBlockTimestampNs,
         claimantId,
       ),
       contributorCycleIntent(
-        null,
+        registryAccountId,
         "release_claim",
         contributorCycle,
         observedBlockTimestampNs,
         claimantId,
       ),
       contributorCycleIntent(
-        null,
+        registryAccountId,
         "expire_cycle_or_claim",
         contributorCycle,
         observedBlockTimestampNs,
         claimantId,
       ),
       evidenceSubmissionPreview(
-        null,
+        registryAccountId,
         contributorCycle,
         observedBlockTimestampNs,
         claimantId,
@@ -239,15 +253,15 @@ export async function buildFixtureJourney(): Promise<FixtureJourney> {
     submissionPreview.intent,
   ] satisfies readonly ContributorTransactionIntent[]);
   const reviewerCycle = submittedLinkedCycleFixture(submissionPreview.evidence);
-  const proposal = proposal63Fixture();
+  const proposal = proposal0Fixture();
   const reviewerBase = {
     cycle: reviewerCycle,
     profile: {
-      version: "2.0.0",
-      codeHash: "ZGdM2TFdQpcXrxPxvq25514EViyi9xBSboetDiB3Uiq",
+      version: "2.3.1",
+      codeHash: "AA4nA45vauiac3jdVwJTzSdUP3oj2r1fDaPAb2mHdgcH",
     },
-    policy: { proposal_bond: "19000000000000000000000" },
-    reviewedRegistryAccountId: null,
+    policy: { proposal_bond: "0" },
+    reviewedRegistryAccountId: registryAccountId,
     proposalIdForLink: null,
   } as const;
 
@@ -257,9 +271,9 @@ export async function buildFixtureJourney(): Promise<FixtureJourney> {
       observation: {
         kind: "FIXTURE",
         fixtureLabel:
-          "P3-T01 authentic proposal-63 RPC snapshot imported in place from tests/fixtures/sputnik/proposal-63-paid.json; not a live read",
+          "Recorded testnet tx_status snapshot for the proposal-0 payout, imported in place from apps/web/lib/fixtures/proposal-0-paid.json; not a live read",
         proposal,
-        receiptResponse: paidProposal63ReceiptGraph,
+        receiptResponse: recordedProposal0ReceiptGraph,
       },
     }),
     buildReviewerModel({
@@ -286,7 +300,7 @@ export async function buildFixtureJourney(): Promise<FixtureJourney> {
       label: "Empty / unconfigured",
       role: "status",
       detail:
-        "No live request ran. No reviewed testnet registry deployment exists, so the current safe read state contains no live records.",
+        "Rendering example only; no live request ran. Mainnet stays isolated and unconfigured; a read against an unconfigured network would show this empty state.",
     },
     {
       key: "PENDING",
@@ -305,7 +319,7 @@ export async function buildFixtureJourney(): Promise<FixtureJourney> {
       key: "VERIFIED_FIXTURE",
       label: "Verified fixture",
       role: "status",
-      detail: `Fixture success pattern only; no live request ran. The canonical adapter derived ${reviewerModel.payment.state}: ${reviewerModel.payment.reason}.`,
+      detail: `Recorded-snapshot success pattern only; no live request ran. The canonical adapter derived ${reviewerModel.payment.state} from the recorded proposal-0 receipt graph: ${reviewerModel.payment.reason}. Re-derive it with node scripts/reconcile-live.mjs.`,
     },
   ] satisfies readonly StatePattern[]);
 
@@ -313,11 +327,11 @@ export async function buildFixtureJourney(): Promise<FixtureJourney> {
     provenance: {
       mode: "FIXTURE_ONLY",
       network: "TESTNET",
-      registryDeployment: null,
+      registryDeployment: registryAccountId,
       walletAvailable: false,
       liveReadsRan: false,
       notice:
-        "Stages 1–3 are separate immutable fixture snapshots of one journey, not one mutable live record.",
+        "Stages 1–3 are separate immutable fixture snapshots of the recorded live testnet journey (docs/testnet-journey.md), not one mutable live record.",
       fixtureSource: fixtureJourneyConstants.fixtureSource,
     },
     operator: {

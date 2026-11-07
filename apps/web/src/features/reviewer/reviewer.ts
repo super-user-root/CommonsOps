@@ -129,6 +129,7 @@ export interface ReviewerModel {
   readonly cycle: Cycle;
   readonly profile: PinnedSputnikProfileInput;
   readonly profileSupported: boolean;
+  readonly profileVerifiable: boolean;
   readonly policy: SputnikPolicySnapshot;
   readonly proposal: NativeTransferProposalPreview;
   readonly addProposalIntent:
@@ -511,6 +512,26 @@ function profileSupported(profile: PinnedSputnikProfileInput): boolean {
   return isSupportedSputnikProfile(profile);
 }
 
+// Profiles the canonical adapter can verify a payout against. Pinned to the
+// same observed graphs as packages/near/src/proposal-builder.ts: 2.0.0 pays
+// without a callback receipt, while the factory-deployed 2.3.1 DAO keeps the
+// payout as a direct child of the act receipt plus a sibling
+// on_proposal_callback receipt that never gates PAID derivation. The executed
+// testnet journey used 2.3.1 (docs/testnet-journey.md). Request construction
+// stays gated by profileSupported above.
+const VERIFIABLE_SPUTNIK_PROFILES: Readonly<Record<string, readonly string[]>> =
+  Object.freeze({
+    "2.0.0": Object.freeze(["ZGdM2TFdQpcXrxPxvq25514EViyi9xBSboetDiB3Uiq"]),
+    "2.3.1": Object.freeze(["AA4nA45vauiac3jdVwJTzSdUP3oj2r1fDaPAb2mHdgcH"]),
+  });
+
+function profileVerifiable(profile: PinnedSputnikProfileInput): boolean {
+  return (
+    VERIFIABLE_SPUTNIK_PROFILES[profile.version]?.includes(profile.codeHash) ??
+    false
+  );
+}
+
 function freezeCycle(cycle: Cycle): Cycle {
   const cloned = cloneFixtureValue(cycle, "cycle");
   if (!isObject(cloned)) throw new Error("cycle: plain object required");
@@ -594,11 +615,14 @@ async function submittedCycleSnapshot(cycle: Cycle): Promise<Cycle> {
     if (snapshot.proposal_link.key.dao_account_id !== snapshot.dao_account_id) {
       throw new Error("cycle.proposal_link: DAO mismatch");
     }
+    // The deployed registry accepts any canonical U64 proposal id, including
+    // 0 (Sputnik numbers proposals from zero; the recorded journey linked
+    // proposal 0 onchain — docs/testnet-journey.md step 8).
     canonicalDecimal(
       snapshot.proposal_link.key.proposal_id,
       "cycle.proposal_link.key.proposal_id",
       64,
-      true,
+      false,
     );
   }
   return snapshot;
@@ -704,7 +728,9 @@ function linkPreview(
     proposalIdForLink === null
       ? null
       : typeof proposalIdForLink === "string"
-        ? (canonicalDecimal(proposalIdForLink, "proposalIdForLink", 64, true),
+        ? // Canonical U64 including 0: the deployed registry accepted a
+          // proposal-0 link onchain (docs/testnet-journey.md step 8).
+          (canonicalDecimal(proposalIdForLink, "proposalIdForLink", 64, false),
           proposalIdForLink)
         : (() => {
             throw new Error("proposalIdForLink: string or null required");
@@ -717,7 +743,7 @@ function linkPreview(
       existingLink: null,
       intent: null,
       reason:
-        "A canonical positive U64 proposal ID is required before a link_proposal preview can be constructed. No browser state is changed.",
+        "A canonical U64 proposal ID is required before a link_proposal preview can be constructed. No browser state is changed.",
     });
   }
 
@@ -882,7 +908,7 @@ function derivePaymentFromSnapshot(
         );
   }
 
-  if (!profileSupported(profile)) {
+  if (!profileVerifiable(profile)) {
     return display("UNKNOWN", "Unsupported Sputnik deployment profile");
   }
 
@@ -1077,6 +1103,7 @@ export async function buildReviewerModel(
     cycle,
     profile,
     profileSupported: supported,
+    profileVerifiable: profileVerifiable(profile),
     policy: policyInput,
     proposal,
     addProposalIntent: addProposalIntent(

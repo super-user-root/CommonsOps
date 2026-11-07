@@ -63,13 +63,13 @@ pnpm smoke:testnet -- <contract-account.testnet>
 
 This satisfies the frozen `pnpm smoke:testnet` required check through the accepted narrow `package.json` scope exception. The smoke command is read-only RPC verification, not deployment authorization.
 
-## View the shell
+## View the workspace
 
 ```text
 pnpm dev
 ```
 
-Open `http://127.0.0.1:3000` — see a static CommonsOps overview labeled **Foundation / not live**. Stop with Ctrl+C.
+Open `http://127.0.0.1:3000` — see the workspace rendering the recorded testnet journey (registry `commonsops.testnet`, template 0, cycle 0:0, real proposal-0 payout). Stop with Ctrl+C.
 
 For a production preview:
 
@@ -78,7 +78,7 @@ pnpm build
 pnpm start
 ```
 
-Open the same loopback URL — see the production foundation page, no live records, wallet prompts, or transaction buttons. No secret environment defaults exist. `NEXT_TELEMETRY_DISABLED=1` is supplied by the verification runner/CI, not a credential. No deployment commands are provided.
+Open the same loopback URL — see the same recorded journey in production mode, no wallet prompts, no live RPC, and no transaction buttons. The workspace imports the recorded onchain data in place; live verification stays in the read-only scripts. No secret environment defaults exist. `NEXT_TELEMETRY_DISABLED=1` is supplied by the verification runner/CI, not a credential. No deployment commands are provided.
 
 ## CI
 

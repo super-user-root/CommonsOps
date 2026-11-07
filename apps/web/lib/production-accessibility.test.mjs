@@ -6,7 +6,8 @@ import test from "node:test";
 const webRoot = path.resolve(import.meta.dirname, "..");
 const builtPage = path.join(webRoot, ".next", "server", "app", "index.html");
 const stylesPath = path.join(webRoot, "app", "globals.css");
-const exactCommitSha = "ab".repeat(20);
+// The recorded immutable evidence commit SHA (docs/testnet-journey.md step 5).
+const exactCommitSha = "1032733c2115b9e9c038d50617f6e151ac8bd59d";
 
 function attributeValues(html, name) {
   return [...html.matchAll(new RegExp(`\\b${name}="([^"]+)"`, "g"))].map(
