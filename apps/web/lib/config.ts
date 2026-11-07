@@ -27,9 +27,10 @@ export interface AppNetworkConfig {
 }
 
 // The testnet registry is deployed and the full journey is recorded in
-// docs/testnet-journey.md. This workspace still performs no live RPC: the
-// recorded values are imported as fixture data. Mainnet stays isolated and
-// unconfigured, so its reads and signing keep failing closed.
+// docs/testnet-journey.md. The live registry section performs read-only
+// JSON-RPC reads against the pinned testnet RPC and sends contributor
+// transactions signed by the connected wallet (see lib/live/). Mainnet stays
+// isolated and unconfigured, so its reads and signing keep failing closed.
 export const networkConfigs: Readonly<Record<Network, AppNetworkConfig>> =
   Object.freeze({
     TESTNET: Object.freeze({
@@ -47,38 +48,6 @@ export const networkConfigs: Readonly<Record<Network, AppNetworkConfig>> =
       deployed: false,
     }),
   });
-
-export type WalletState =
-  | { readonly status: "UNAVAILABLE"; readonly reason: string }
-  | { readonly status: "DISCONNECTED"; readonly network: Network }
-  | {
-      readonly status: "CONNECTED";
-      readonly network: Network;
-      readonly accountId: AccountId;
-    };
-
-export interface WalletBoundary {
-  readonly state: WalletState;
-  readonly canRead: boolean;
-  readonly canSign: boolean;
-  readonly connect: () => Promise<never>;
-  readonly sign: () => Promise<never>;
-}
-
-export function createWalletBoundary(network: Network): WalletBoundary {
-  const config = networkConfigs[network];
-  const reason = config.deployed
-    ? "No supported wallet connector is configured."
-    : `No ${network.toLowerCase()} registry deployment is configured.`;
-  const reject = () => Promise.reject(new Error(`WALLET_DISABLED: ${reason}`));
-  return Object.freeze({
-    state: Object.freeze({ status: "UNAVAILABLE" as const, reason }),
-    canRead: false,
-    canSign: false,
-    connect: reject,
-    sign: reject,
-  });
-}
 
 export interface RegistryReadState {
   readonly network: Network;

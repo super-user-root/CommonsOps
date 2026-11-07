@@ -14,7 +14,8 @@ contract, the reconciliation tooling, a truthful web workspace, and the public
 evidence for all of it.
 
 - **Live demo:** <https://super-user-root.github.io/CommonsOps/> — the
-  workspace rendering the recorded live journey, no wallet or setup needed
+  recorded live journey plus the live testnet registry surface; the live
+  reads need no wallet, and a testnet wallet is optional for transactions
 - **Track:** Social Money (`social`)
 - **Network:** NEAR testnet only (no mainnet deployment)
 - **License:** [MIT](LICENSE)
@@ -101,10 +102,12 @@ flowchart TB
 
 The same workspace is live at
 <https://super-user-root.github.io/CommonsOps/> — a static build of this
-repository's recorded live journey, no wallet or setup needed. Locally, `pnpm
-start` renders the identical pages. The app is honest by design: every stage
-is labeled as an immutable recorded snapshot, and it performs no RPC and no
-transactions.
+repository's workspace, no wallet or setup needed for the recorded journey
+and the live registry reads. Locally, `pnpm start` renders the identical
+pages. The app is honest by design: the three journey stages are labeled as
+immutable recorded snapshots, and the live registry section names every
+state — loading, named read errors, wallet rejection ("no request sent"),
+and submitted transactions with explorer links.
 
 ![Operator stage: unsigned intent previews](demo/screenshots/03-operator.png)
 
@@ -172,8 +175,12 @@ faucet is needed.
    rendering the recorded live journey (operator, contributor, reviewer) with
    exact recorded onchain values — template 0, cycle 0:0, claimant
    `commonsops.testnet`, real PR #17 evidence, and the real proposal-0 payout —
-   plus unsigned intent previews and honest state handling. The web workspace
-   performs no live RPC and no transactions by design.
+   plus unsigned intent previews and honest state handling. The live registry
+   section reads the deployed registry over testnet RPC without any wallet,
+   and connecting a testnet wallet makes the contributor actions sendable:
+   your wallet signs `claim_cycle` / `submit_evidence` / `release_claim` /
+   `expire_cycle_or_claim` against the live registry (zero deposit; 100 TGas,
+   the recorded journey's wire values). The DAO payout stays out of the app.
 6. Run `node --test tests/e2e/e2e-replay.test.ts` — see the offline
    end-to-end replay suite pass: happy path, proposal/evidence-reuse
    conflicts, duplicate-apply idempotency, and deterministic store
@@ -266,12 +273,14 @@ Hackathon scope. The contract is complete and exercised onchain; moving to
 mainnet is an operational decision, not a code change — the network is a
 configuration boundary, and mainnet reads fail closed by design.
 
-**Why is the web workspace fixture-backed?**
-By design: it renders the recorded live journey — the exact recorded onchain
-data imported in place — without wallets, RPC, or fabricated network results.
-Every displayed value comes from the recorded journey, and all live
-verification happens in the read-only scripts, where claims can be re-checked
-against the chain.
+**Why are the journey stages fixture-backed?**
+By design: the three recorded stages render the exact recorded onchain data
+imported in place, without clocks, random values, or fabricated network
+results — immutable snapshots you can diff against the chain. The live
+registry section is separate and labeled live: it performs read-only testnet
+RPC and, when you connect a wallet, sends transactions that your wallet
+signs. The DAO payout flow is not simulated in the app; it is documented and
+re-verifiable in `docs/testnet-journey.md` and the read-only scripts.
 
 ## Repository layout
 
@@ -282,7 +291,7 @@ Where to start reading, per area:
 | `contracts/registry`   | [`src/lib.rs`](contracts/registry/src/lib.rs)                                                                                      | near-sdk Rust contract: templates, deterministic cycles, claims, immutable evidence, one-time proposal links (58 tests in [`src/tests.rs`](contracts/registry/src/tests.rs)) |
 | `packages/domain`      | [`src/index.ts`](packages/domain/src/index.ts)                                                                                     | cycle/claim/evidence state machine shared by all packages                                                                                                                    |
 | `packages/near`        | [`src/reconciliation.ts`](packages/near/src/reconciliation.ts), [`src/proposal-builder.ts`](packages/near/src/proposal-builder.ts) | causal payout derivation (`PAID` from receipt graphs); pinned Sputnik profiles and exact proposal construction                                                               |
-| `apps/web`             | [`app/page.tsx`](apps/web/app/page.tsx)                                                                                            | Next.js workspace rendering the recorded journey (operator / contributor / reviewer); no RPC by design                                                                       |
+| `apps/web`             | [`app/page.tsx`](apps/web/app/page.tsx)                                                                                            | Next.js workspace: recorded journey (operator / contributor / reviewer) plus the live testnet registry surface (read-only RPC, wallet-signed transactions)                   |
 | `scripts/`             | [`smoke-testnet.mjs`](scripts/smoke-testnet.mjs), [`reconcile-live.mjs`](scripts/reconcile-live.mjs)                               | read-only live verification runners                                                                                                                                          |
 | `tests/`               | [`e2e/e2e-replay.test.ts`](tests/e2e/e2e-replay.test.ts)                                                                           | offline deterministic e2e replay: conflicts, idempotency, convergence                                                                                                        |
 | `docs/`                | [`testnet-journey.md`](docs/testnet-journey.md)                                                                                    | journey record, command reference, security findings, release verification                                                                                                   |
@@ -292,11 +301,12 @@ Where to start reading, per area:
 
 ## Verification and review
 
-- 58 Rust contract tests, 125 TypeScript tests (domain, adapter,
-  reconciliation, web), production build, release-WASM checks, and an offline
-  verification gate (`pnpm verify:offline`) all pass. The offline end-to-end
-  replay suite adds 5 more deterministic tests (happy path, reuse conflicts,
-  idempotency, convergence).
+- 58 Rust contract tests, 153 TypeScript tests (domain, adapter,
+  reconciliation, web incl. the live-surface network guard, RPC parsing, and
+  transaction-construction suites), production build, release-WASM checks,
+  and an offline verification gate (`pnpm verify:offline`) all pass. The
+  offline end-to-end replay suite adds 5 more deterministic tests (happy
+  path, reuse conflicts, idempotency, convergence).
 - An independent security review (threat model, adversarial probes) found no
   critical/high issues; all findings are resolved or waived with recorded
   rationale in [docs/p4-t02-findings.md](docs/p4-t02-findings.md).
@@ -320,8 +330,11 @@ Where to start reading, per area:
   establish correctness or security — the tests, the reviews, and the
   onchain evidence in this repository do.
 - **Libraries:** Next.js 16.4.4, React/React DOM 19.3.1, TypeScript 7.0.2,
-  Prettier 3.9.10, near-sdk 5.30.0 (exact pins; transitive inputs in
-  `pnpm-lock.yaml` and `contracts/registry/Cargo.lock`). No application
+  Prettier 3.9.10, near-sdk 5.30.0, @near-wallet-selector core/modal-ui/
+  my-near-wallet/meteor-wallet/here-wallet 10.1.4 (exact pins; transitive
+  inputs in `pnpm-lock.yaml` and `contracts/registry/Cargo.lock`). The wallet
+  selector packages are the official NEAR wallet-selector
+  (github.com/near/wallet-selector, MIT OR Apache-2.0). No application
   template or tutorial was copied.
 - **Track:** Social Money (`social`). The project lead has declared no other
   hackathon project for this submission.
@@ -335,7 +348,11 @@ No new token or points system, no AI-driven payment approval, no cross-chain
 payments, no custody of DAO funds, no autonomous scheduler, and no
 browser-controlled payment state. The DAO always retains governance and
 treasury custody; CommonsOps is the evidence and verification layer around
-it. The web workspace performs no live RPC and executes no transactions.
+it. The web workspace performs live read-only RPC against NEAR testnet and
+sends contributor transactions signed by your own connected wallet — it never
+holds keys, never signs for you, and never simulates a payout. Operator
+(manager) methods stay display-only in the UI. Mainnet is refused in code,
+and the DAO payout flow stays inside the DAO's own governance.
 
 ## License
 
