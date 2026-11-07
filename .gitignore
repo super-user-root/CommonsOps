@@ -29,3 +29,6 @@ AGENTS.local.md
 .commonsops/
 COMMONSOPS_AI_HANDOFF.md
 COMMONSOPS_START_HERE.md
+
+# Static export output (GitHub Pages build)
+apps/web/out/
