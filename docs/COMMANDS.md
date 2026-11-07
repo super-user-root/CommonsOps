@@ -98,10 +98,11 @@ COMMONSOPS_STATIC_EXPORT=1 pnpm --filter @commonsops/web exec next build
 
 See `apps/web/out/` — pre-rendered HTML with `/CommonsOps/`-prefixed assets.
 `.github/workflows/pages.yaml` runs this export build on every push to
-`main` so Pages compatibility is verified continuously. Publishing is gated
-on the `ENABLE_PAGES` repository variable: after enabling Pages (Settings →
-Pages → Source: GitHub Actions) and setting `ENABLE_PAGES=true`, the next
-push to `main` uploads the artifact and deploys to
+`main` (and on manual `workflow_dispatch` runs) so Pages compatibility is
+verified continuously. Publishing is gated on the `ENABLE_PAGES` repository
+variable: after enabling Pages (Settings → Pages → Source: GitHub Actions)
+and setting `ENABLE_PAGES=true`, the next push to `main` — or a manual
+workflow run — uploads the artifact and deploys to
 `https://<owner>.github.io/CommonsOps/`. The workflow has no secrets beyond
 the built-in `GITHUB_TOKEN`, which the deploy job scopes to `pages: write`
 and `id-token: write`.
