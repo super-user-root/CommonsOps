@@ -83,3 +83,25 @@ Open the same loopback URL — see the production foundation page, no live recor
 ## CI
 
 `.github/workflows/verify.yaml` runs on `pull_request` and `push` with only `contents: read`. Third-party actions are pinned to full SHAs verified against actual upstream refs on 2026-11-03: checkout v6.0.2, setup-node v6.0.0, pnpm/action-setup v5.0.0, and dtolnay/rust-toolchain stable (the input still pins Rust 1.98.0). Checkout does not persist credentials. CI installs locked dependencies, then runs the same local offline profile. There are no deployment keys, secret references, `pull_request_target` events, or publish steps. A local pass is not a claim that hosted CI has run.
+
+## GitHub Pages static export
+
+The web workspace also builds as a fully static export for GitHub Pages.
+The default `pnpm build` / `pnpm start` path is unchanged and remains
+server-rendered; export mode only activates when the build environment sets
+`COMMONSOPS_STATIC_EXPORT=1`, which adds `output: "export"`, the
+`/CommonsOps` base path, and trailing slashes. Local check:
+
+```text
+COMMONSOPS_STATIC_EXPORT=1 pnpm --filter @commonsops/web exec next build
+```
+
+See `apps/web/out/` — pre-rendered HTML with `/CommonsOps/`-prefixed assets.
+`.github/workflows/pages.yaml` runs this export build on every push to
+`main` so Pages compatibility is verified continuously. Publishing is gated
+on the `ENABLE_PAGES` repository variable: after enabling Pages (Settings →
+Pages → Source: GitHub Actions) and setting `ENABLE_PAGES=true`, the next
+push to `main` uploads the artifact and deploys to
+`https://<owner>.github.io/CommonsOps/`. The workflow has no secrets beyond
+the built-in `GITHUB_TOKEN`, which the deploy job scopes to `pages: write`
+and `id-token: write`.

@@ -1,0 +1,70 @@
+name: Pages
+
+# Builds the static export of the fixture-backed web workspace for GitHub
+# Pages on every push to main. The export build always runs so Pages
+# compatibility is verified continuously. The artifact upload and the Pages
+# deployment are gated on the ENABLE_PAGES repository variable so owners can
+# turn publishing on (Settings -> Pages -> Source: GitHub Actions, then set
+# ENABLE_PAGES=true) without touching this workflow.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      COMMONSOPS_STATIC_EXPORT: "1"
+    steps:
+      - name: Check out code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0 (peeled commit)
+        with:
+          version: 11.25.0
+      - name: Install Node
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 24.18.0
+      - name: Install locked JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build static export
+        run: pnpm --filter @commonsops/web exec next build
+      - name: List export output
+        run: ls -R apps/web/out | head -40
+      - name: Upload Pages artifact
+        if: vars.ENABLE_PAGES == 'true'
+        uses: actions/upload-pages-artifact@56afc609e742 # v3 (peeled commit)
+        with:
+          path: apps/web/out
+
+  deploy:
+    if: vars.ENABLE_PAGES == 'true'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0 # v5 (peeled commit)
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5 # v4 (peeled commit)
