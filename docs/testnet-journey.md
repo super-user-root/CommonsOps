@@ -141,3 +141,34 @@ journey stages:
   the UI, no private keys exist in app code, mainnet is refused in code, and
   the DAO payout flow remains inside the DAO's own governance — the app never
   simulates a payout.
+
+## 11. Judge demo cycle — template 2 opened (operator action, 2026-11-08)
+
+After the live workspace shipped, the operator keychain-signed two more
+transactions so hackathon judges can claim a cycle interactively:
+
+1. `create_template` — template 2 "Judge demo - claim a live work cycle":
+   DAO `commonsops-dao.sputnikv2.testnet`, start = 2026-11-07T21:05:40Z
+   (immediately due), interval/work window/claim duration 14 days each,
+   payout 0.5 NEAR, storage deposit 0.04096 NEAR.
+2. `materialize_cycle {template_id: "2"}` — cycle **2:0 OPEN**
+   (storage deposit 0.16384 NEAR), emitting
+   `EVENT_JSON ... "event":"cycle_opened"` with
+   `deadline_at_ns 1795295140385722126` and no claim.
+
+Both were signed with the operator keychain via near-cli 0.30.1; the
+transaction hashes are not listed by the public indexer for these calls,
+but the resulting onchain state is verifiable by anyone with read-only
+RPC, and the exact near-cli invocations are reproduced in the task
+handoff record (`.commonsops/handoffs/P5-T11.md`, followup section).
+Verification:
+
+```sh
+curl -sS -X POST https://rpc.testnet.near.org -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"t","method":"query","params":{"request_type":"call_function","account_id":"commonsops.testnet","method_name":"get_cycle","args_base64":"eyJ0ZW1wbGF0ZV9pZCI6IjIiLCJwZXJpb2RfaW5kZXgiOiIwIn0=","finality":"final"}}'
+# -> cycle 2:0, status OPEN, claim: null
+```
+
+Judges connect a testnet wallet in the live workspace and the contributor
+actions bind to this open cycle; claiming is a real onchain transaction
+signed by the judge's own wallet.
