@@ -127,6 +127,15 @@ real recorded proposal-0 payout: the adapter derives `PAID` from the recorded
 receipt graph of transaction `ApRvPUsw…` — the same journey documented in the
 [evidence table](#live-onchain-evidence-testnet) below.
 
+![Live registry: real RPC reads and the open judge-demo cycle](demo/screenshots/09-live-registry.png)
+
+**Live registry** — real testnet RPC reads enumerating every active template.
+Template 2 is a judge-demo cycle that is **OPEN and claimable right now**:
+connect a testnet wallet and the contributor actions send real transactions
+to the deployed registry, signed by your own wallet.
+
+## Explore without running anything
+
 ## Explore without running anything
 
 A judge can verify the project end to end without cloning:
@@ -301,12 +310,13 @@ Where to start reading, per area:
 
 ## Verification and review
 
-- 58 Rust contract tests, 153 TypeScript tests (domain, adapter,
-  reconciliation, web incl. the live-surface network guard, RPC parsing, and
-  transaction-construction suites), production build, release-WASM checks,
-  and an offline verification gate (`pnpm verify:offline`) all pass. The
-  offline end-to-end replay suite adds 5 more deterministic tests (happy
-  path, reuse conflicts, idempotency, convergence).
+- 58 Rust contract tests, 162 TypeScript tests (domain, adapter,
+  reconciliation, web incl. the live-surface network guard, RPC parsing,
+  transaction construction, and multi-template registry enumeration),
+  production build, release-WASM checks, and an offline verification gate
+  (`pnpm verify:offline`) all pass. The offline end-to-end replay suite adds
+  5 more deterministic tests (happy path, reuse conflicts, idempotency,
+  convergence).
 - An independent security review (threat model, adversarial probes) found no
   critical/high issues; all findings are resolved or waived with recorded
   rationale in [docs/p4-t02-findings.md](docs/p4-t02-findings.md).
