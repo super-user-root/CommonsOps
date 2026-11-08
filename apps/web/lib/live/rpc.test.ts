@@ -8,6 +8,12 @@ import {
   parseFoundationStatus,
   parseTemplate,
   rpcCall,
+  RpcContext,
+  RPC_ENDPOINTS,
+  RPC_LIMITS,
+  callViewFunction,
+  parseFinalBlockHeader,
+  type RpcOptions,
   LiveRpcError,
 } from "./rpc.ts";
 
@@ -134,7 +140,7 @@ test("rpcCall reports HTTP failures and unreachable nodes without inventing data
       rpcCall("https://rpc.testnet.near.org", "block", {}),
       (error: unknown) => {
         assert.ok(error instanceof LiveRpcError);
-        assert.equal(error.code, "ERR_RPC_HTTP_STATUS");
+        assert.equal(error.code, "ERR_RPC_SERVER");
         return true;
       },
     );
@@ -200,6 +206,374 @@ test("fetchFinalBlockHeader preserves exact u64 digits despite JSON number round
     );
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+function testContext(fetcher: typeof fetch, limits: RpcOptions["limits"] = {}) {
+  return new RpcContext({
+    fetch: fetcher,
+    limits: { backoffMs: 0, timeoutMs: 30, deadlineMs: 500, ...limits },
+  });
+}
+const BLOCK_HASH = "DBoPADQwvnnzNHzU5BFpZxAbBAE7CDV1FDoBjgfErct4";
+const HEADER = {
+  height: "276677160",
+  timestampNs: "1794081836177342701",
+  hash: BLOCK_HASH,
+};
+const rawHeader = `{ "height": 999, "timestamp": 888, "result": { "other": {"timestamp":1}, "header" : { "height" : 276677160, "timestamp" : 1794081836177342701, "hash": "${BLOCK_HASH}" } } }`;
+function envelope(result: unknown) {
+  return new Response(JSON.stringify({ result }));
+}
+function hasCode(code: string) {
+  return (error: unknown) =>
+    error instanceof LiveRpcError && error.code === code;
+}
+
+test("whole-body transport failures retry, timeout settles non-cooperative fetch/body, and diagnostics omit content", async () => {
+  for (const phase of ["stream", "fetch", "body"]) {
+    let calls = 0;
+    const context = testContext(async () => {
+      calls++;
+      if (phase === "fetch") return new Promise<Response>(() => {});
+      const response = new Response("ignored");
+      response.text = () =>
+        phase === "body"
+          ? new Promise<string>(() => {})
+          : Promise.reject(new Error("secret upstream detail"));
+      return response;
+    });
+    try {
+      await assert.rejects(
+        rpcCall(RPC_ENDPOINTS[0], "query", {}, context),
+        hasCode(phase === "stream" ? "ERR_RPC_UNREACHABLE" : "ERR_RPC_TIMEOUT"),
+      );
+      assert.equal(calls, 4);
+    } finally {
+      context.dispose();
+    }
+  }
+});
+
+test("deterministic HTTP refusal ignores even a hanging/error body and schema errors never retry", async () => {
+  let calls = 0;
+  const refusal = testContext(async () => {
+    calls++;
+    const response = new Response("ignored", { status: 403 });
+    response.text = () => new Promise<string>(() => {});
+    return response;
+  });
+  try {
+    await assert.rejects(
+      rpcCall(RPC_ENDPOINTS[0], "query", {}, refusal),
+      hasCode("ERR_RPC_HTTP_STATUS"),
+    );
+    assert.equal(calls, 1);
+  } finally {
+    refusal.dispose();
+  }
+  for (const body of ["not-json", "{}", '{"result":{"header":{"height":1}}}']) {
+    calls = 0;
+    const invalid = testContext(async () => {
+      calls++;
+      return new Response(body);
+    });
+    try {
+      await assert.rejects(
+        fetchFinalBlockHeader(RPC_ENDPOINTS[0], invalid),
+        hasCode("ERR_RPC_INVALID_RESPONSE"),
+      );
+      assert.equal(calls, 1);
+    } finally {
+      invalid.dispose();
+    }
+  }
+});
+
+test("archival metadata mismatch after primary failure never switches to a newer final block", async () => {
+  const seen: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const context = testContext(async (url, init) => {
+    const request = JSON.parse(String(init?.body)) as {
+      method: string;
+      params: Record<string, unknown>;
+    };
+    seen.push(request);
+    if (request.method === "block") return new Response(rawHeader);
+    if (String(url) === RPC_ENDPOINTS[0])
+      return new Response("unavailable", { status: 503 });
+    return envelope({
+      block_hash: BLOCK_HASH,
+      block_height: Number(HEADER.height) + 1,
+      result: [110, 117, 108, 108],
+    });
+  });
+  try {
+    const block = await fetchFinalBlockHeader(RPC_ENDPOINTS[0], context);
+    await assert.rejects(
+      callViewFunction(
+        RPC_ENDPOINTS[0],
+        "commonsops.testnet",
+        "get_cycle",
+        {},
+        block,
+        context,
+      ),
+      hasCode("ERR_RPC_BLOCK_MISMATCH"),
+    );
+    assert.equal(seen.filter((read) => read.method === "block").length, 1);
+    assert.ok(
+      seen
+        .filter((read) => read.method === "query")
+        .every((read) => read.params.block_id === BLOCK_HASH),
+    );
+  } finally {
+    context.dispose();
+  }
+});
+
+test("HTTP and RPC transient failures retry across endpoints; deterministic failures do not", async () => {
+  for (const status of [400, 401, 403, 429, 500, 503]) {
+    let calls = 0;
+    const context = testContext(async () => {
+      calls++;
+      return new Response("<secret>", { status });
+    });
+    try {
+      await assert.rejects(
+        rpcCall(RPC_ENDPOINTS[0], "query", {}, context),
+        (error: unknown) => {
+          assert.ok(error instanceof LiveRpcError);
+          assert.doesNotMatch(error.message, /secret/);
+          return true;
+        },
+      );
+      assert.equal(calls, status === 429 || status >= 500 ? 4 : 1);
+    } finally {
+      context.dispose();
+    }
+  }
+  for (const name of [
+    "INTERNAL_ERROR",
+    "TIMEOUT_ERROR",
+    "UNKNOWN_BLOCK",
+    "CONTRACT_EXECUTION_ERROR",
+    "METHOD_NOT_FOUND",
+    "PARSE_ERROR",
+  ]) {
+    let calls = 0;
+    const context = testContext(async () => {
+      calls++;
+      return new Response(
+        JSON.stringify({ error: { message: "secret", cause: { name } } }),
+      );
+    });
+    try {
+      await assert.rejects(rpcCall(RPC_ENDPOINTS[0], "query", {}, context));
+      assert.equal(
+        calls,
+        ["INTERNAL_ERROR", "TIMEOUT_ERROR", "UNKNOWN_BLOCK"].includes(name)
+          ? 4
+          : 1,
+      );
+    } finally {
+      context.dispose();
+    }
+  }
+});
+
+test("deadline, shared attempt budget and pool bound many simultaneous reads", async () => {
+  let active = 0;
+  let peak = 0;
+  let attempts = 0;
+  const context = testContext(
+    async () => {
+      active++;
+      attempts++;
+      peak = Math.max(peak, active);
+      const response = envelope("ok");
+      response.text = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active--;
+        return '{"result":"ok"}';
+      };
+      return response;
+    },
+    { maxAttempts: 8 },
+  );
+  try {
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, () =>
+        rpcCall(RPC_ENDPOINTS[0], "query", {}, context),
+      ),
+    );
+    assert.equal(attempts, 8);
+    assert.ok(peak <= 4);
+    assert.ok(
+      results.some(
+        (result) =>
+          result.status === "rejected" &&
+          hasCode("ERR_RPC_BUDGET")(result.reason),
+      ),
+    );
+  } finally {
+    context.dispose();
+  }
+  const deadline = testContext(async () => new Promise<Response>(() => {}), {
+    deadlineMs: 10,
+  });
+  try {
+    await assert.rejects(
+      rpcCall(RPC_ENDPOINTS[0], "query", {}, deadline),
+      hasCode("ERR_RPC_DEADLINE"),
+    );
+  } finally {
+    deadline.dispose();
+  }
+  assert.equal(RPC_LIMITS.deadlineMs, 40_000);
+});
+
+test("abort cancels fetch/body, queued requests and backoff without extra attempts", async () => {
+  for (const phase of ["fetch", "body", "backoff"]) {
+    let attempts = 0;
+    const context = testContext(
+      async () => {
+        attempts++;
+        if (phase === "fetch") return new Promise<Response>(() => {});
+        if (phase === "backoff") return new Response("bad", { status: 503 });
+        const response = envelope(null);
+        response.text = () => new Promise<string>(() => {});
+        return response;
+      },
+      { backoffMs: phase === "backoff" ? 100 : 0, timeoutMs: 100 },
+    );
+    const reads = Array.from({ length: 8 }, () =>
+      rpcCall(RPC_ENDPOINTS[0], "query", {}, context),
+    );
+    setTimeout(() => context.cancel(), 5);
+    const results = await Promise.allSettled(reads);
+    assert.ok(
+      results.every(
+        (result) =>
+          result.status === "rejected" &&
+          hasCode("ERR_RPC_CANCELLED")(result.reason),
+      ),
+    );
+    assert.equal(attempts, phase === "backoff" ? 8 : 4);
+    context.dispose();
+  }
+});
+
+test("block parser scopes lossless U64 tokens to header with JSON whitespace and escaped strings", () => {
+  assert.deepEqual(parseFinalBlockHeader(rawHeader), HEADER);
+  assert.equal(
+    parseFinalBlockHeader(
+      rawHeader.replace(
+        '"other": {"timestamp":1}',
+        '"other": "\\\"timestamp\\\": 123"',
+      ),
+    ).timestampNs,
+    HEADER.timestampNs,
+  );
+  for (const timestamp of ["1.5", "1e18", "-1", "18446744073709551616"]) {
+    assert.throws(
+      () =>
+        parseFinalBlockHeader(
+          rawHeader.replace("1794081836177342701", timestamp),
+        ),
+      LiveRpcError,
+    );
+  }
+});
+
+test("views pin the chosen hash across archival failover, verify metadata and never promote invalid response", async () => {
+  const seen: Array<{
+    url: string;
+    method: string;
+    params: Record<string, unknown>;
+  }> = [];
+  const context = testContext(async (input, init) => {
+    const url = String(input);
+    const request = JSON.parse(String(init?.body)) as {
+      method: string;
+      params: Record<string, unknown>;
+    };
+    seen.push({ url, ...request });
+    if (request.method === "block") return new Response(rawHeader);
+    if (url === RPC_ENDPOINTS[0])
+      return new Response("temporary", { status: 503 });
+    return envelope({
+      block_hash: BLOCK_HASH,
+      block_height: Number(HEADER.height),
+      result: [110, 117, 108, 108],
+    });
+  });
+  try {
+    const block = await fetchFinalBlockHeader(RPC_ENDPOINTS[0], context);
+    assert.equal(
+      await callViewFunction(
+        RPC_ENDPOINTS[0],
+        "commonsops.testnet",
+        "get_cycle",
+        {},
+        block,
+        context,
+      ),
+      null,
+    );
+    assert.equal(
+      await callViewFunction(
+        RPC_ENDPOINTS[0],
+        "commonsops.testnet",
+        "get_cycle",
+        {},
+        block,
+        context,
+      ),
+      null,
+    );
+    assert.equal(seen.filter((read) => read.method === "block").length, 1);
+    assert.ok(
+      seen
+        .filter((read) => read.method === "query")
+        .every(
+          (read) =>
+            read.params.block_id === BLOCK_HASH && !("finality" in read.params),
+        ),
+    );
+    assert.equal(seen.at(-1)?.url, RPC_ENDPOINTS[1]);
+  } finally {
+    context.dispose();
+  }
+  const invalidSeen: string[] = [];
+  const invalid = testContext(async (url) => {
+    invalidSeen.push(String(url));
+    return envelope({
+      block_hash: "different",
+      block_height: Number(HEADER.height),
+      result: [110, 117, 108, 108],
+    });
+  });
+  try {
+    await assert.rejects(
+      callViewFunction(
+        RPC_ENDPOINTS[1],
+        "commonsops.testnet",
+        "get_cycle",
+        {},
+        HEADER,
+        invalid,
+      ),
+      hasCode("ERR_RPC_BLOCK_MISMATCH"),
+    );
+    await rpcCall(RPC_ENDPOINTS[0], "query", {}, invalid);
+    assert.deepEqual(invalidSeen, [RPC_ENDPOINTS[1], RPC_ENDPOINTS[0]]);
+    await assert.rejects(
+      rpcCall("https://rpc.mainnet.near.org", "query", {}, invalid),
+      hasCode("ERR_RPC_ENDPOINT"),
+    );
+    assert.equal(invalidSeen.length, 2);
+  } finally {
+    invalid.dispose();
   }
 });
 

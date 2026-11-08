@@ -408,7 +408,7 @@ test("builds exact zero-deposit link_proposal ABI for a canonical U64 ID includi
     network: "TESTNET",
     signingEnabled: false,
     disabledReason:
-      "Unsigned preview only: no wallet connector is configured, this is not executable or authorized.",
+      "Recorded preview — signing disabled here; use live registry above. DAO payout stays outside this app.",
   });
 
   const absent = await buildReviewerModel(input({ proposalIdForLink: null }));

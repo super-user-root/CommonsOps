@@ -158,7 +158,7 @@ test("creates exact zero-deposit claim, release and public-expiry ABI intents", 
     actionAllowed: true,
     signingEnabled: false,
     disabledReason:
-      "No reviewed testnet registry deployment is configured. Wallet connector is not configured.",
+      "No reviewed testnet registry deployment is configured. Recorded preview — signing disabled here; use live registry above.",
   });
 
   const releaseIntent = await contributorCycleIntent(
@@ -176,7 +176,7 @@ test("creates exact zero-deposit claim, release and public-expiry ABI intents", 
   assert.equal(releaseIntent.signingEnabled, false);
   assert.equal(
     releaseIntent.disabledReason,
-    "Wallet connector is not configured.",
+    "Recorded preview — signing disabled here; use live registry above.",
   );
 
   const expiryIntent = await contributorCycleIntent(
@@ -215,7 +215,8 @@ test("creates exact submit_evidence ABI intent without digest or arbitrary recip
     network: "TESTNET",
     actionAllowed: true,
     signingEnabled: false,
-    disabledReason: "Wallet connector is not configured.",
+    disabledReason:
+      "Recorded preview — signing disabled here; use live registry above.",
   });
   assert.equal("digest_sha256" in preview.intent.args, false);
   assert.equal("payout_recipient_id" in preview.intent.args, false);

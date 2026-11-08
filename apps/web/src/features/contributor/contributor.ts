@@ -389,8 +389,8 @@ export async function deriveContributorCycleView(
 
 function signingDisabledReason(reviewedRegistryAccountId: string | null) {
   return reviewedRegistryAccountId
-    ? "Wallet connector is not configured."
-    : "No reviewed testnet registry deployment is configured. Wallet connector is not configured.";
+    ? "Recorded preview — signing disabled here; use live registry above."
+    : "No reviewed testnet registry deployment is configured. Recorded preview — signing disabled here; use live registry above.";
 }
 
 function transactionIntent(

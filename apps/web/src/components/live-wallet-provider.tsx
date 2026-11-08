@@ -126,10 +126,12 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
       intent: Parameters<typeof contributorWalletTransaction>[0],
       registryAccountId: string,
     ): Promise<SendOutcome> => {
-      const bundle = await ensureSelector();
-      const wallet = await bundle.selector.wallet();
       return sendContributorIntent(
         async (transaction: WalletTransaction) => {
+          // Initialization, selection and construction all sit inside the
+          // send result boundary; none can strand a UI request in PENDING.
+          const bundle = await ensureSelector();
+          const wallet = await bundle.selector.wallet();
           const selectorTransaction =
             await toWalletSelectorTransaction(transaction);
           const result = await wallet.signAndSendTransactions({

@@ -133,11 +133,9 @@ receipt graph of transaction `ApRvPUsw…` — the same journey documented in th
 ![Live registry: real RPC reads and the open judge-demo cycle](demo/screenshots/09-live-registry.png)
 
 **Live registry** — real testnet RPC reads enumerating every active template.
-Template 2 is a judge-demo cycle that is **OPEN and claimable right now**:
-connect a testnet wallet and the contributor actions send real transactions
+Template 2 was recorded as a judge-demo **OPEN** cycle; current claimability
+must be re-read and may change or expire. Connect a testnet wallet and available contributor actions send real transactions
 to the deployed registry, signed by your own wallet.
-
-## Explore without running anything
 
 ## Explore without running anything
 
@@ -200,6 +198,38 @@ faucet is needed.
 
 For development, `pnpm dev`. For per-command setup details and artifact paths
 see [docs/COMMANDS.md](docs/COMMANDS.md).
+
+## Browser live-read behavior
+
+Each refresh selects one finalized block and pins **every view to that block
+hash**, including archival failover. Returned block hash/height must match;
+header U64 timestamp digits are preserved exactly. Only
+`rpc.testnet.near.org` and `archival-rpc.testnet.near.org` are used for these
+reads. A refresh shares a maximum of four active HTTP requests, 96 total
+attempts, two attempts per endpoint per read, a 6-second fetch/body timeout,
+250 ms cancellable backoff, and a 40-second overall deadline. Transport/body
+failures, timeouts, 429, 5xx and explicit transient RPC errors may retry;
+deterministic request/schema/contract failures do not retry blindly.
+
+Template IDs are discovered in order until null, capped at 16. Discovery
+reports complete/capped/interrupted separately. Cycles then use a four-worker
+pool; a failed cycle makes its template an explicit error, never an invented
+"no cycle". Infrastructure failure has one alert and Retry **inside the live
+registry section** (the separate state-pattern gallery intentionally shows an
+ERROR example). Earlier verified data remains labelled **stale**, with signing
+disabled until refresh succeeds. Reading blocks duplicate refresh clicks;
+unmount cancels reads and obsolete completions cannot overwrite new state.
+Account/evidence changes immediately invalidate obsolete intents. Wallet-reported
+transaction hashes/explorer links persist for this page session across refreshes,
+including template removal or errors; they do not certify execution or payment.
+Recorded previews remain unsigned; use the live registry for contributor sends.
+
+Automated async tests exercise these transport and state controllers without
+real network or wallet signing. The repository has no React DOM rendering test
+harness; controller tests plus source-wiring checks do not substitute for browser
+verification of controls, announcements and layout. Browser verification of a
+new build/deployment must be recorded separately, without assuming endpoint
+outage or claiming unperformed signing.
 
 ## Try the live contract — one command
 
@@ -390,12 +420,11 @@ Where to start reading, per area:
   (from 2026-10-19). The initial repository seed (commit
   `52a9425eb1ce84071f28d63a763edbc71d42f967`) contained only a README,
   ignore patterns, and the MIT license — no pre-hackathon product code.
-- **AI disclosure:** This project was built with AI assistance. The human
-  lead supervised the work end to end — directed all product decisions,
-  performed code review on every change before merge, and executed all
-  onchain deployments and transactions on NEAR testnet. AI output does not
-  establish correctness or security — the tests, the reviews, and the
-  onchain evidence in this repository do.
+- **AI disclosure:** Built with AI assistance under human direction and supervision.
+  Implementation and review used separate agent contexts, with tests and onchain
+  evidence recorded. Product decisions were directed by the human lead.
+  AI output alone does not establish correctness or security; use the recorded
+  tests, independent reviews and onchain evidence.
 - **Libraries:** Next.js 16.4.4, React/React DOM 19.3.1, TypeScript 7.0.2,
   Prettier 3.9.10, near-sdk 5.30.0, @near-wallet-selector core/modal-ui/
   my-near-wallet/meteor-wallet/here-wallet 10.1.4 (exact pins; transitive

@@ -138,8 +138,8 @@ export async function sendContributorIntent(
   intent: ContributorTransactionIntent,
   registryAccountId: string,
 ): Promise<SendOutcome> {
-  const transaction = contributorWalletTransaction(intent, registryAccountId);
   try {
+    const transaction = contributorWalletTransaction(intent, registryAccountId);
     const outcomes = await send(transaction);
     const transactionHash = extractTransactionHash(outcomes);
     return Object.freeze({
@@ -180,6 +180,37 @@ export type LiveRequestState =
       readonly method: string;
       readonly message: string;
     };
+
+// Evidence lives above refreshable template groups. Successful outcomes are
+// append-only for the lifetime of this page, including removed/error groups.
+export class TransactionEvidence {
+  private states = new Map<string, LiveRequestState>();
+  private history: Extract<LiveRequestState, { status: "SUCCESS" }>[] = [];
+  get(key: string): LiveRequestState {
+    return this.states.get(key) ?? { status: "IDLE" };
+  }
+  set(key: string, state: LiveRequestState): void {
+    this.states.set(key, state);
+    if (state.status === "SUCCESS") this.history.push(state);
+  }
+  records(): readonly Extract<LiveRequestState, { status: "SUCCESS" }>[] {
+    return this.history.slice();
+  }
+}
+
+export async function settleWalletRequest(
+  send: () => Promise<SendOutcome>,
+): Promise<SendOutcome> {
+  try {
+    return await send();
+  } catch {
+    return {
+      kind: "ERROR",
+      message:
+        "Wallet initialization, selection or transaction construction failed. Check your wallet for the actual outcome.",
+    };
+  }
+}
 
 export function describeLiveRequest(state: LiveRequestState): string {
   switch (state.status) {

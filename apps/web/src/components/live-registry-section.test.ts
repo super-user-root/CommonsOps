@@ -41,7 +41,7 @@ test("live section keeps the required label, honest states, and scoped heading",
   assert.match(component, /No\s+fallback\s+data is shown/);
   assert.match(component, /Re-read live state/);
   // Per-template read errors are named and do not invent data.
-  assert.match(component, /templates after this one were not read/);
+  assert.match(component, /template discovery interrupted/);
   // No open cycle yet is rendered honestly for a template's next period.
   assert.match(
     component,
@@ -102,6 +102,23 @@ test("registry reads enumerate templates with hardened parsing and a cap", async
   assert.match(reads, /parseTemplate\(raw\)/);
   assert.match(reads, /parseCycle\(/);
   assert.match(reads, /parseFoundationStatus\(/);
+});
+
+test("async controllers are wired to cancellation, key gating, stale send guard and parent evidence", async () => {
+  const component = await readFile(componentPath, "utf8");
+  assert.match(component, /return \(\) => reads.cancel\(\)/);
+  assert.match(component, /disabled=\{loading\}/);
+  assert.match(component, /Stale snapshot/);
+  assert.match(component, /derivation.current\(inputKey\)/);
+  assert.match(component, /!gate.fresh/);
+  assert.match(component, /Transaction evidence from this browser/);
+  assert.match(component, /settleWalletRequest/);
+  assert.equal(component.split("data-live-rpc-error").length - 1, 1);
+  const provider = await readFile(providerPath, "utf8");
+  assert.match(
+    provider,
+    /return sendContributorIntent\([\s\S]*await ensureSelector\(\)[\s\S]*selector.wallet\(\)/,
+  );
 });
 
 test("live section derives actions only from the reviewed intent builders", async () => {
