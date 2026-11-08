@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  copyFile,
   mkdir,
   mkdtemp,
   readFile,
@@ -55,6 +56,71 @@ const envelope = (result) =>
   new Response(
     JSON.stringify({ jsonrpc: "2.0", id: "fixture-response", result }),
   );
+
+// Only run-local diagnostics are excluded from compatibility equality. Keep
+// every legacy field and any unexpected field so drift cannot be hidden.
+function smokeFields({ runProvenance, ...fields }) {
+  return fields;
+}
+
+function assertSmokeProvenance(provenance) {
+  assert.deepEqual(Object.keys(provenance).sort(), [
+    "attemptedEndpoints",
+    "attempts",
+    "elapsedMs",
+    "startedAt",
+    "validatedEndpoints",
+  ]);
+  assert.equal(
+    new Date(provenance.startedAt).toISOString(),
+    provenance.startedAt,
+  );
+  assert.ok(
+    Number.isSafeInteger(provenance.elapsedMs) && provenance.elapsedMs >= 0,
+  );
+  assert.ok(
+    provenance.attempts.length >= 4 && provenance.attempts.length <= 16,
+  );
+  for (const attempt of provenance.attempts) {
+    assert.deepEqual(Object.keys(attempt).sort(), [
+      "code",
+      "elapsedMs",
+      "endpoint",
+      "httpStatus",
+      "method",
+      "outcome",
+    ]);
+    assert.ok(RPC_ENDPOINTS.includes(attempt.endpoint));
+    assert.ok(["EXPERIMENTAL_tx_status", "query"].includes(attempt.method));
+    assert.ok(
+      Number.isSafeInteger(attempt.elapsedMs) && attempt.elapsedMs >= 0,
+    );
+    if (attempt.outcome === "VALIDATED") {
+      assert.equal(attempt.httpStatus, 200);
+      assert.equal(attempt.code, null);
+    } else {
+      assert.equal(attempt.outcome, "FAILED");
+      assert.match(attempt.code, /^ERR_RPC_/);
+      assert.ok(
+        attempt.httpStatus === null || Number.isInteger(attempt.httpStatus),
+      );
+    }
+  }
+  const validated = provenance.attempts.filter(
+    (attempt) => attempt.outcome === "VALIDATED",
+  );
+  assert.equal(validated.length, 4);
+  assert.deepEqual(
+    validated.map((attempt) => attempt.method),
+    ["EXPERIMENTAL_tx_status", "query", "query", "query"],
+  );
+  assert.deepEqual(provenance.attemptedEndpoints, [
+    ...new Set(provenance.attempts.map((attempt) => attempt.endpoint)),
+  ]);
+  assert.deepEqual(provenance.validatedEndpoints, [
+    ...new Set(validated.map((attempt) => attempt.endpoint)),
+  ]);
+}
 
 // Synthetic tx protocol fixture derived from the public manifest. The actual
 // reviewed built WASM is checked by view_code below, not synthetic zero bytes.
@@ -253,8 +319,10 @@ test("smoke verifies four logical reads at exact post-init block with full 16-at
       assert.equal(request.params.finality, undefined);
     }
   }
-  const { runProvenance, ...compatible } = result;
-  assert.deepEqual(compatible, SMOKE);
+  assert.deepEqual(smokeFields(result), smokeFields(SMOKE));
+  assertSmokeProvenance(result.runProvenance);
+  if (Object.hasOwn(SMOKE, "runProvenance"))
+    assertSmokeProvenance(SMOKE.runProvenance);
   assert.equal(result.wasmBytes, 261_226);
   assert.equal(result.wasmSha256, MANIFEST.wasmSha256);
 });
@@ -428,6 +496,119 @@ test("stdout-only prints compatible successful records and never changes tracked
   assert.deepEqual(JSON.parse(replayText[0]), record);
   assert.equal(record.snapshotFingerprint, FINGERPRINT);
   assert.deepEqual(await artifacts(), before);
+});
+
+test("saved default smoke output survives subsequent historical verification", async (t) => {
+  const originalEvidence = await readFile(
+    path.join(ROOT, "deployments/testnet/smoke-result.json"),
+    "utf8",
+  );
+  const { root, dir } = await scratch(t);
+  const probe = await smokeTransport();
+  const written = await smoke(["commonsops.testnet"], {
+    root,
+    rpc: { fetch: probe.fetch },
+    stdout: () => {},
+  });
+  const file = path.join(dir, "smoke-result.json");
+  const savedExpected = JSON.parse(await readFile(file, "utf8"));
+  assert.deepEqual(savedExpected, written);
+  assertSmokeProvenance(savedExpected.runProvenance);
+  const legacyExpected = smokeFields(savedExpected);
+  const nextProbe = await smokeTransport({ failover: true });
+  const subsequent = await verifySmoke(MANIFEST, "commonsops.testnet", {
+    fetch: nextProbe.fetch,
+    limits: { backoffMs: 0 },
+  });
+  assertSmokeProvenance(subsequent.runProvenance);
+  assert.notDeepEqual(subsequent.runProvenance, savedExpected.runProvenance);
+  for (const expected of [legacyExpected, savedExpected]) {
+    assert.deepEqual(smokeFields(subsequent), smokeFields(expected));
+    // Every stable field remains comparison-significant in either shape.
+    for (const key of Object.keys(legacyExpected)) {
+      const changed = { ...expected, [key]: null };
+      assert.throws(
+        () => assert.deepEqual(smokeFields(subsequent), smokeFields(changed)),
+        { code: "ERR_ASSERTION" },
+      );
+    }
+    assert.throws(
+      () =>
+        assert.deepEqual(
+          smokeFields(subsequent),
+          smokeFields({ ...expected, unexpected: true }),
+        ),
+      { code: "ERR_ASSERTION" },
+    );
+    assert.throws(
+      () =>
+        assert.deepEqual(
+          smokeFields({ ...subsequent, unexpected: true }),
+          smokeFields(expected),
+        ),
+      { code: "ERR_ASSERTION" },
+    );
+  }
+  assert.throws(
+    () =>
+      assertSmokeProvenance({ ...savedExpected.runProvenance, attempts: [] }),
+    { code: "ERR_ASSERTION" },
+  );
+
+  // Minimal scratch equivalent, with real reviewed WASM and fixture-only RPC.
+  // Run only the existing comparison test so this subprocess cannot recurse.
+  for (const relative of [
+    "scripts/historical-reads.test.mjs",
+    "scripts/deployment-lib.mjs",
+    "scripts/smoke-testnet.mjs",
+    "scripts/reconcile-live.mjs",
+    "packages/near/package.json",
+    "packages/near/src/read-only-rpc.ts",
+    "packages/near/src/bounded-json.ts",
+    "packages/near/src/reconciliation.ts",
+    "packages/near/src/index.ts",
+    "packages/near/src/proposal-builder.ts",
+    "tests/fixtures/sputnik/dao-proposal-0-231-paid.json",
+    "contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
+  ]) {
+    const target = path.join(root, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await copyFile(path.join(ROOT, relative), target);
+  }
+  for (const [shape, expected] of [
+    ["legacy", legacyExpected],
+    ["saved default output", savedExpected],
+  ]) {
+    await writeFile(file, `${JSON.stringify(expected, null, 2)}\n`);
+    const next = spawnSync(
+      process.execPath,
+      [
+        "--test",
+        "--test-name-pattern=^smoke verifies four logical reads",
+        path.join(root, "scripts/historical-reads.test.mjs"),
+      ],
+      {
+        cwd: root,
+        encoding: "utf8",
+        shell: false,
+        // This is a distinct test runner, not a child using the parent's
+        // internal node:test serialization channel.
+        env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+      },
+    );
+    assert.equal(next.error, undefined);
+    assert.equal(next.status, 0, `${shape}: ${next.stdout}${next.stderr}`);
+    assert.match(next.stdout, /smoke verifies four logical reads/);
+    assert.match(next.stdout, /tests 1\b/);
+    assert.deepEqual(JSON.parse(await readFile(file, "utf8")), expected);
+  }
+  assert.equal(
+    await readFile(
+      path.join(ROOT, "deployments/testnet/smoke-result.json"),
+      "utf8",
+    ),
+    originalEvidence,
+  );
 });
 
 test("no-flag behavior writes successful artifacts atomically, preserving snapshot shape and stdout results", async (t) => {
