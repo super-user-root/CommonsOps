@@ -923,7 +923,7 @@ function LiveTemplateGroup({
               <button
                 className="button primary"
                 type="button"
-                onClick={() => void wallet.connect()}
+                onClick={(event) => void wallet.connect(event.currentTarget)}
               >
                 Connect testnet wallet
               </button>

@@ -268,10 +268,14 @@ cycles; transaction evidence survives refresh/selection/hiding. The state-patter
 gallery's ERROR is an intentional example outside this region and behind a native
 disclosure. Scope header wallet checks to `#wallet-connect-button`. The official
 selector has no supported ARIA/focus options in 10.1.4; a small adapter observes
-only its owned `#near-wallet-selector-modal` root, names the dialog and close button,
-places/traps focus, and restores the opener after the library removes its delayed
-close transition. It uses the library onHide lifecycle, disconnects observers and
-listeners on cleanup, and leaves Escape to the official chooser. Tests use owned-root
+only its owned `#near-wallet-selector-modal` root and names the dialog/close button.
+Focus entry checks rendered visibility after a frame and the owned opening-animation
+completion (not polling); modalFadeIn starts with visibility:hidden. A temporary
+document-capture Tab handler also handles focus outside the dialog. Click handlers
+pass the actual opener before lazy initialization; it is restored after the library
+removes its delayed close transition. The adapter uses onHide, cancels pending
+frames and disconnects observers/listeners on cleanup; Escape remains official
+chooser behavior. Tests use owned-root
 stubs, not a mounted DOM harness. Verify no-provider opening/Tab/Shift+Tab/close/
 delayed Escape and restoration separately in the official browser. Do not select,
 connect or sign a wallet for a no-signing check. Native recorded disclosures must

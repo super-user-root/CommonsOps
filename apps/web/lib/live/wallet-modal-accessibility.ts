@@ -31,6 +31,9 @@ export function accessibleWalletChooser(
     new MutationObserver(callback),
 ): WalletChooser {
   const document = root.ownerDocument;
+  const window = document.defaultView;
+  let entryFrame: number | null = null;
+  let focusing = false;
   let observer: ReturnType<typeof observe> | null = null;
   let dialog: HTMLElement | null = null;
   let opener: HTMLElement | null = null;
@@ -48,6 +51,29 @@ export function accessibleWalletChooser(
       else element.setAttribute(name, prior);
     });
   };
+  const rendered = (element: HTMLElement): boolean => {
+    if (
+      !element.isConnected ||
+      !element.getClientRects().length ||
+      element.closest("[hidden], [inert]")
+    )
+      return false;
+    const style = window?.getComputedStyle(element);
+    return (
+      style?.display !== "none" &&
+      style?.visibility !== "hidden" &&
+      style?.visibility !== "collapse"
+    );
+  };
+  const opening = () => {
+    const wrapper = dialog?.closest(".nws-modal-wrapper");
+    return (
+      active &&
+      !closing &&
+      Boolean(dialog) &&
+      !wrapper?.classList.contains("closing")
+    );
+  };
   const focusable = () =>
     dialog
       ? Array.from(
@@ -58,38 +84,86 @@ export function accessibleWalletChooser(
           (element) =>
             element.tabIndex >= 0 &&
             !element.hasAttribute("disabled") &&
-            element.getClientRects().length > 0 &&
-            !element.closest("[hidden], [inert]"),
+            rendered(element),
         )
       : [];
+  const focus = (element: HTMLElement) => {
+    if (focusing || !rendered(element)) return false;
+    focusing = true;
+    try {
+      element.focus({ preventScroll: true });
+      return document.activeElement === element;
+    } finally {
+      focusing = false;
+    }
+  };
   const enter = () => {
-    if (!dialog) return;
+    if (!opening() || !dialog || !rendered(dialog)) return;
+    if (dialog.contains(document.activeElement)) return;
+    const targets = focusable();
     const close = dialog.querySelector<HTMLElement>("button.close-button");
-    (close ?? focusable()[0] ?? dialog).focus();
+    // The close button exists during modalFadeIn's visibility:hidden FROM
+    // frame. DOM insertion/rects alone do not mean focus() can succeed.
+    const first = close && targets.includes(close) ? close : targets[0];
+    if (!first || !focus(first)) focus(dialog);
+  };
+  const cancelEntry = () => {
+    if (entryFrame !== null) window?.cancelAnimationFrame(entryFrame);
+    entryFrame = null;
+  };
+  const scheduleEntry = () => {
+    if (!opening() || entryFrame !== null || !window) return;
+    // One render opportunity per real mount/mutation/open-animation event.
+    // Never self-reschedule or poll while hidden. animationend/cancel handles
+    // the library's 200ms opening transition; a plain/reduced-motion render
+    // needs only this frame.
+    entryFrame = window.requestAnimationFrame(() => {
+      entryFrame = null;
+      enter();
+    });
+  };
+  const animationSettled = (event: AnimationEvent) => {
+    if (!dialog) return;
+    const wrapper = dialog.closest(".nws-modal-wrapper");
+    if (
+      (event.target === wrapper && event.animationName === "modalFadeIn") ||
+      (event.target === dialog && event.animationName === "modalScaleIn")
+    )
+      scheduleEntry();
   };
   const keydown = (event: KeyboardEvent) => {
-    if (!active || !dialog || event.key !== "Tab") return;
+    if (!opening() || !dialog || event.key !== "Tab") return;
+    // Temporary document-capture listener: BODY/outside Tab never bubbles
+    // through the owned root. No handling after close/dispose, or for Escape.
+    event.preventDefault();
+    if (!rendered(dialog)) {
+      scheduleEntry();
+      return;
+    }
     const targets = focusable();
     const index = dialogFocusIndex(
       targets.indexOf(document.activeElement as HTMLElement),
       targets.length,
       event.shiftKey,
     );
-    event.preventDefault();
-    (index === null ? dialog : targets[index]!).focus();
+    focus(index === null ? dialog : targets[index]!);
   };
   const focusin = () => {
-    if (active && dialog && !dialog.contains(document.activeElement)) enter();
+    if (opening() && dialog && !dialog.contains(document.activeElement))
+      enter();
   };
   const finish = () => {
     active = false;
+    cancelEntry();
     observer?.disconnect();
     observer = null;
-    root.removeEventListener("keydown", keydown);
+    document.removeEventListener("keydown", keydown, true);
+    root.removeEventListener("animationend", animationSettled);
+    root.removeEventListener("animationcancel", animationSettled);
     document.removeEventListener("focusin", focusin);
     for (const restore of undo.splice(0).reverse()) restore();
     dialog = null;
-    if (opener?.isConnected && !opener.hasAttribute("disabled")) opener.focus();
+    if (opener?.isConnected && !opener.hasAttribute("disabled")) focus(opener);
     opener = null;
   };
   const sync = () => {
@@ -112,10 +186,11 @@ export function accessibleWalletChooser(
     } else patch(dialog, "aria-label", "Connect testnet wallet");
     const close = dialog.querySelector<HTMLElement>("button.close-button");
     if (close) patch(close, "aria-label", "Close wallet chooser");
-    if (changed || !dialog.contains(document.activeElement)) enter();
+    if (changed || !dialog.contains(document.activeElement)) scheduleEntry();
   };
   const subscription = modal.on("onHide", () => {
     closing = true;
+    cancelEntry();
     // The library keeps its DOM for a 200ms close transition. The root observer
     // restores focus when it is actually removed, not while it is still a dialog.
     sync();
@@ -132,9 +207,11 @@ export function accessibleWalletChooser(
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["class", "hidden", "disabled"],
+        attributeFilter: ["class", "style", "hidden", "disabled", "inert"],
       });
-      root.addEventListener("keydown", keydown);
+      document.addEventListener("keydown", keydown, true);
+      root.addEventListener("animationend", animationSettled);
+      root.addEventListener("animationcancel", animationSettled);
       document.addEventListener("focusin", focusin);
       try {
         modal.show();

@@ -42,7 +42,7 @@ export interface LiveWalletContextValue {
   readonly phase: LiveWalletPhase;
   readonly error: string | null;
   readonly accountId: string | null;
-  readonly connect: () => Promise<void>;
+  readonly connect: (opener?: HTMLElement | null) => Promise<void>;
   readonly disconnect: () => Promise<void>;
   readonly sendIntent: (
     intent: Parameters<typeof contributorWalletTransaction>[0],
@@ -114,22 +114,28 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
       return initRef.current;
     }, [syncAccounts]);
 
-  const connect = useCallback(async () => {
-    // Save the actual trigger before lazy initialization can move focus to BODY.
-    const opener =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    try {
-      const { chooser } = await ensureSelector();
-      if (mountedRef.current) chooser.show(opener);
-    } catch (connectError) {
-      if (mountedRef.current) {
-        setError(failureMessage(connectError));
-        setPhase("ERROR");
+  const connect = useCallback(
+    async (trigger?: HTMLElement | null) => {
+      // Click handlers supply currentTarget: pointer activation need not focus it.
+      // Capture synchronously before lazy loading disables/re-renders the button.
+      const opener =
+        trigger ??
+        (document.activeElement instanceof HTMLElement &&
+        document.activeElement !== document.body
+          ? document.activeElement
+          : null);
+      try {
+        const { chooser } = await ensureSelector();
+        if (mountedRef.current) chooser.show(opener);
+      } catch (connectError) {
+        if (mountedRef.current) {
+          setError(failureMessage(connectError));
+          setPhase("ERROR");
+        }
       }
-    }
-  }, [ensureSelector]);
+    },
+    [ensureSelector],
+  );
 
   const disconnect = useCallback(async () => {
     sendAuthority.invalidate();

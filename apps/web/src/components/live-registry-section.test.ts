@@ -189,6 +189,18 @@ test("wallet code loads client-side only and holds no keys", async () => {
   assert.match(header, /Disconnect/);
 });
 
+test("both wallet controls pass the actual trigger before lazy initialization", async () => {
+  const [header, component, provider] = await Promise.all([
+    readFile(headerPath, "utf8"),
+    readFile(componentPath, "utf8"),
+    readFile(providerPath, "utf8"),
+  ]);
+  for (const source of [header, component])
+    assert.match(source, /wallet\.connect\(event\.currentTarget\)/);
+  assert.match(provider, /const opener =\s*trigger \?\?/);
+  assert.match(provider, /chooser\.show\(opener\)/);
+});
+
 test("page mounts the provider once and the header uses the live control", async () => {
   const page = await readFile(pagePath, "utf8");
   assert.equal(page.split("<LiveWalletProvider>").length - 1, 1);
