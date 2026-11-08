@@ -17,17 +17,27 @@ See installed toolchains and cached dependencies. The first setup requires npm/c
 
 ## Checks: do X — see Y
 
-| Command                | Expected result                                                                                                                                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm lint`            | Prettier checks actual source/config/docs, Node checks runner syntax, and `cargo fmt --check` checks Rust. Formatting errors fail.                                                                                        |
-| `pnpm typecheck`       | TypeScript checks domain, adapter, web, and tests (including JavaScript runner files); any type error fails.                                                                                                              |
-| `pnpm test`            | Three foundation tests check immutable configuration and shell metadata. Domain/adapter/web tests run through recursive `pnpm typecheck`.                                                                                 |
-| `pnpm test:contract`   | Rust registry business/invariant unit tests, including initialization, claims, deadlines, storage and proposal guards. Uses `--locked --offline`.                                                                         |
-| `pnpm build`           | Next.js creates a production build under `apps/web/.next`; the overview is statically generated with no remote data/fonts.                                                                                                |
-| `pnpm build:contract`  | Rust creates `contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm`; Node validates WASM, exact method exports, and absence of transfer/promise-creation imports. Uses `--locked --offline`. |
-| `pnpm test:production` | Starts the existing production build on an ephemeral loopback port; checks HTTP 200, live-surface/recorded-preview disclosures, metadata and HTTP 404; stops the server. Build first.                                     |
-| `pnpm verify:offline`  | Runs every check above in order and prints a final PASS only if all pass. No skipped WASM fallback.                                                                                                                       |
-| `pnpm format`          | Applies Prettier to project files; use when deliberately fixing formatting, not to bypass checks.                                                                                                                         |
+| Command                | Expected result                                                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm lint`            | Pinned Prettier checks the same source/config/docs selection in bounded relative-file batches; Node checks runner syntax, and `cargo fmt --check` checks Rust. Any batch failure fails the check.            |
+| `pnpm typecheck`       | TypeScript checks domain, adapter, web, and tests (including JavaScript runner files); any type error fails.                                                                                                 |
+| `pnpm test`            | Foundation tests plus portable-runner regressions (selection, batching, long/spaced Unicode paths, direct invocation, failure propagation). Domain/adapter/web tests run through recursive `pnpm typecheck`. |
+| `pnpm test:contract`   | Rust registry business/invariant unit tests, including initialization, claims, deadlines, storage and proposal guards. Uses `--locked --offline`.                                                            |
+| `pnpm build`           | Next.js creates a production build under `apps/web/.next`; the overview is statically generated with no remote data/fonts.                                                                                   |
+| `pnpm build:contract`  | Rust builds the release WASM; Node validates WASM structure/exports/imports and runs deployment-verifier and historical-CLI regressions against the built artifact. Uses `--locked --offline`.               |
+| `pnpm test:production` | Starts the existing production build on an ephemeral loopback port; checks HTTP 200, live-surface/recorded-preview disclosures, metadata and HTTP 404; stops the server. Build first.                        |
+| `pnpm verify:offline`  | Runs every check above in order and prints a final PASS only if all pass. No skipped WASM fallback.                                                                                                          |
+| `pnpm format`          | Applies Prettier to project files; use when deliberately fixing formatting, not to bypass checks.                                                                                                            |
+
+The formatter is launched with `process.execPath` and the installed, exact-pinned
+Prettier JavaScript CLI resolved through `createRequire`, never a Windows `.cmd`
+shim or shell. It uses the repository root as `cwd`, the unchanged source-file
+selection/exclusions, relative filenames, and deterministic batches capped at
+7,000 conservative command-size units including executable, CLI and quoting/UTF-8
+overhead. An individually oversized argument is an error, not a skipped file.
+No drive mapping, shortened-root recipe or `--preserve-symlinks` flag is needed.
+`tests/run.test.mjs` exercises real direct Prettier execution in a long/spaced
+Unicode temporary root; the complete gate must still be run in each checkout.
 
 `verify:offline` disables Next telemetry and sets Cargo offline mode. It does not call NEAR RPC, GitHub, an indexer, a wallet, or another external service. The production smoke uses loopback HTTP, not a public network endpoint. Dependencies, platform-specific pnpm packages, Rust toolchain, and WASM target must already be available. Run setup again on a new host. This profile proves offline unit/invariant behavior, compilation, WASM structure and local HTTP behavior. It does **not** by itself prove NEAR VM execution, deployed state, treasury integration, browser interaction or signing safety; use the separate recorded evidence and checks for those boundaries.
 
@@ -62,6 +72,83 @@ pnpm smoke:testnet -- <contract-account.testnet>
 ```
 
 This satisfies the frozen `pnpm smoke:testnet` required check through the accepted narrow `package.json` scope exception. The smoke command is read-only RPC verification, not deployment authorization.
+
+## Historical read-only verification (no wallet or artifact writes)
+
+Use the public recorded deployment and payout identifiers, without altering their
+committed evidence. Node 24 executes the shared TypeScript modules directly.
+
+```text
+node scripts/smoke-testnet.mjs commonsops.testnet --stdout-only
+node scripts/reconcile-live.mjs --stdout-only
+node --test tests/e2e/e2e-replay.test.ts
+```
+
+- **Smoke:** verifies the final atomic deployment transaction, exact receipt list
+  and initialization receipt block, then `view_account`, `view_code` and
+  `foundation_status` at the recorded post-initialization block hash **and height**.
+  Checks the reviewed 261,226-byte WASM SHA-256 and NEAR code hash, not just a legacy
+  foundation marker. Four logical reads share one context and at most 16 attempts.
+- **Reconcile:** re-derives the fixed recorded proposal-0 payout using the production
+  `reconcilePayment` adapter, not a newly discovered registry link or payment.
+  One historical transaction lookup has at most four attempts. Success is
+  `reconciliationStatus: "APPLIED"`, `adapterState: "PAID"`, `recordCount: 1` and
+  `snapshotFingerprint: "f1eed9bbbb82e63c2f96a5321b53dd85b9e7395bd54f556a93eccd8482719965"`.
+  The original response envelope/numeric types and immutable record provenance
+  remain intact; transport endpoint changes must not change this fingerprint.
+- **Replay:** five fully offline tests exercise the committed payout fixture and
+  fixed expectations, including idempotency and replay conflicts. A replay PASS
+  does not establish current RPC availability.
+
+Both live commands use `packages/near/src/read-only-rpc.ts`, the same bounded
+transport/scanner as the browser. Only `https://rpc.testnet.near.org` and
+`https://archival-rpc.testnet.near.org` are allowed; redirects and arbitrary
+endpoints are refused. The browser context still permits only `block`/`query`.
+The explicit historical context permits only exact scoped `EXPERIMENTAL_tx_status`
+and pinned query requests, never broadcast/sign methods. Every run disposes its
+context. Bounds remain four active HTTP requests including bodies, two attempts
+per endpoint per call, 250ms backoff, 6s attempt deadline and 40s total deadline.
+The stream cap is 2 MiB with fatal UTF-8 and duplicate-safe JSON; depth64,
+300,000 nodes and 4 MiB scanner work. `call_function` decoded JSON is capped at
+64 KiB; `view_code` base64 WASM uses the larger response bound instead.
+
+Historical HTTP408 and explicit `NOT_OBSERVED`, `UNKNOWN_TRANSACTION` or
+`TRANSACTION_UNAVAILABLE` tx-status responses can fail over, along with the
+existing transport/timeout/429/5xx/explicit transient classes. HTTP403, parse,
+schema, finality, contract and provenance mismatches are not retried. Unknown or
+inaccessible historical data terminates as failure, not fake success or a fixture
+fallback. No external timeout or repeated polling is required.
+
+Success prints one JSON object with the previous fields plus outer
+`runProvenance: { startedAt, elapsedMs, attemptedEndpoints, validatedEndpoints,
+attempts }`. Each attempt contains `{ endpoint, method, elapsedMs, httpStatus,
+outcome, code }`; this is execution evidence, not a cryptographic RPC proof.
+The smoke `rpcUrl` remains the configured primary for compatibility; use
+`runProvenance` for actual attempted/validated endpoints. Reconciliation attribution
+records and snapshots never contain timing/endpoint data. Failure exits1, prints
+`{ status: "FAILED", error: { code, message }, runProvenance }` to stderr and prints
+no success JSON to stdout. Argument/preflight errors have null run provenance.
+Do not relabel a live failure as PASS because the recorded replay passed.
+
+`--stdout-only` writes no smoke result, replay record or reconciliation snapshot.
+Without the flag, the old artifact paths remain:
+`deployments/testnet/smoke-result.json`, `replay-record.json` and
+`reconciliation-snapshot.json`. They are written only after successful verification,
+using individual same-directory atomic replacements (the two reconciliation files
+are not a multi-file filesystem transaction). Failed verification leaves existing
+successful artifacts unchanged. Unknown/duplicate flags or extra arguments fail;
+there is no endpoint override, signing or retry-loop CLI flag.
+
+Focused offline checks (build the WASM first for deployment fixtures):
+
+```text
+node --test tests/run.test.mjs
+pnpm --filter @commonsops/near typecheck
+pnpm build:contract
+node --test scripts/deployment-lib.test.mjs scripts/historical-reads.test.mjs
+```
+
+These runner/transport/script regressions also run in `pnpm verify:offline`.
 
 ## View the workspace
 
