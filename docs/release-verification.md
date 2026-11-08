@@ -72,9 +72,14 @@ proposal link) plus the end-to-end failure-path demonstrations (duplicate
 claim rejected onchain, proposal reuse rejected onchain) — see
 [testnet-journey.md](./testnet-journey.md). The dated agent-context findings and
 public dispositions are summarized in [p4-t02-findings.md](./p4-t02-findings.md).
-Failed-send hashes were not captured for the duplicate-claim/proposal-reuse
-observations, so those are not independently explorer-verifiable here; the
-public Rust/replay tests provide separate executable guard coverage. This record
+The public [end-to-end execution record](../tests/e2e/live-e2e-results.json)
+contains captured hashes for both controls: duplicate claim
+`GKfq7Jmda62CaEXYsHfmTqoNiCyJZ41wZd22cCwak1a1` and proposal reuse
+`9wd9JoWorr9UcfpDse5nRCig43Nq9S64nDWqZymz6KVR`. These are recorded
+transaction identities, not a claim of a fresh explorer or RPC recheck.
+The same file separately lists executions whose hashes were not captured;
+that limitation does not apply to the two captured controls above. Public
+Rust/replay tests provide separate executable guard coverage. This record
 is not an external security-audit certificate or a current release endorsement.
 
 ## Current read-only recheck

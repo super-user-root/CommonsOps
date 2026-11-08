@@ -61,9 +61,12 @@ complete raw finalized RPC response for the real payout (act receipt
 `EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2`) ships in the repository as
 `tests/fixtures/sputnik/dao-proposal-0-231-paid.json`, and the journey record
 (`docs/testnet-journey.md` §7/§9) plus the P3-T06 live results
-(`tests/e2e/live-e2e-results.json`, ten transaction hashes) make every
-identifier independently verifiable. Anyone can re-derive the attribution from
-live chain data with the read-only `node scripts/reconcile-live.mjs`.
+(`tests/e2e/live-e2e-results.json`, ten transaction records including an
+explicitly uncaptured claim) document the available public identifiers and
+capture limitations. Anyone can attempt to re-derive the payout attribution
+from chain data with the bounded read-only
+`node scripts/reconcile-live.mjs --stdout-only`; RPC availability is not
+guaranteed.
 
 ### F2 — fingerprint is integrity-only, not authenticity (Medium) — WAIVED
 

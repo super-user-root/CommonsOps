@@ -35,6 +35,24 @@ in-app actions. CommonsOps holds no DAO payout funds; registry storage collatera
 is retained. Testnet wallet selection is optional; browsing must never sign or
 send on the visitor's behalf.
 
+## Current compact-tour captures
+
+The following PNGs were captured from source commit
+[`f59065c`](https://github.com/super-user-root/CommonsOps/commit/f59065c9958ee2ae1ddb360a0dda1d7eb71b43c5)
+on 2026-11-09 through the browser capture tool, using a locally served
+production build. They are native viewport captures, not upscaled images or a
+claim of high-DPI capture. Keyboard focus outlines are intentionally visible.
+
+| Current capture                                                                              | Viewport   | What was observed                                                                                                                                              |
+| -------------------------------------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [10-compact-overview-desktop.png](screenshots/10-compact-overview-desktop.png)               | 1280 × 720 | Product overview with separate live and recorded-proof routes; the 0.5 NEAR result is explicitly recorded.                                                     |
+| [11-recorded-payout-expanded.png](screenshots/11-recorded-payout-expanded.png)               | 1280 × 720 | The recorded payout disclosure is open, with the approval-versus-payment warning and recorded fixture provenance visible; full receipt details continue below. |
+| [12-live-unavailable-recorded-route.png](screenshots/12-live-unavailable-recorded-route.png) | 1280 × 720 | A real RPC failure, Retry, and an explicitly non-live recorded-evidence route. No live data or successful claim was fabricated.                                |
+| [13-compact-overview-mobile.png](screenshots/13-compact-overview-mobile.png)                 | 390 × 844  | Mobile navigation and the two entry routes at their actual viewport size; more recorded-outcome content continues below the frame.                             |
+
+These images demonstrate the captured UI and states, not provider uptime,
+current shared-slot availability, wallet signing, or a published X post.
+
 ## Screenshot inventory — archival, not the current layout
 
 The existing files below were last refreshed in public commit
@@ -57,10 +75,9 @@ scaled into a long default README.
 | [08-truth-panel.png](screenshots/08-truth-panel.png)                       | Earlier implementation/boundary summary.                                                                           |
 | [09-live-registry.png](screenshots/09-live-registry.png)                   | Historical live-read presentation. Any displayed OPEN slot was only an observation then, not current claimability. |
 
-The current source adds a shorter tour and native disclosures. These archival
-frames do not certify its layout, focus behavior or live state. Consult the
-hosted build and its source revision; only browser-captured, reviewed replacements
-can be described as current. No replacement file is linked before it exists.
+The compact-tour captures above replace these frames as the current layout
+illustrations. The archive remains useful for historical context, but it does
+not establish present focus behavior, network results, or slot availability.
 
 ## Recorded evidence provenance
 

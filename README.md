@@ -24,8 +24,10 @@ merge status, authorship, or that a commit belongs to a PR.
 Live RPC can fail. The unavailable card keeps its real error and Retry, plus a
 labelled **recorded evidence — not a live result** route. Recorded proof and
 replay remain useful when RPC is down or the shared cycle is occupied.
-[Demo guide and archived captures](demo/README.md) explain capture provenance;
-old screenshots are not presented as the current layout.
+[Demo guide, current captures and archive](demo/README.md) explain capture
+provenance. The [compact desktop overview](demo/screenshots/10-compact-overview-desktop.png)
+and [mobile overview](demo/screenshots/13-compact-overview-mobile.png) show the
+new tour; older screenshots are explicitly archival, not current-state proof.
 
 ## How it works
 
