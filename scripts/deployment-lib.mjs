@@ -1,4 +1,13 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  HistoricalRpcContext,
+  LiveRpcError,
+  RPC_ENDPOINTS,
+  RpcContext,
+} from "../packages/near/src/read-only-rpc.ts";
 
 export const REVIEWED_SOURCE_HEAD = "27b631a15745859b92572349d60425dd2d1a6ed9";
 export const REVIEWED_CONTRACT_TREE =
@@ -9,7 +18,7 @@ export const REVIEWED_WASM_BYTES = 261_226;
 export const REVIEWED_RUST = "1.98.0";
 export const REVIEWED_NEAR_SDK = "5.30.0";
 export const REVIEWED_NEAR_CLI = "near-cli-rs 0.30.1";
-export const RPC_URL = "https://rpc.testnet.near.org";
+export const RPC_URL = RPC_ENDPOINTS[0];
 export const ACCOUNT_PATTERN =
   /^(?=.{2,64}$)(?:[a-z0-9]+[-_])*[a-z0-9]+(?:\.(?:[a-z0-9]+[-_])*[a-z0-9]+)*$/;
 
@@ -177,21 +186,107 @@ export function base58Encode(bytes) {
   return encoded || "1";
 }
 
-export async function rpcCall(method, params, fetchImpl = fetch) {
-  const response = await fetchImpl(RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: "commonsops-deployment",
-      method,
-      params,
-    }),
+// Compatibility for the unsigned preparer's existing (method, params, fetch)
+// calls. Historical callers must pass their explicit scoped context; no broad
+// tx capability is silently granted here. A standalone read is always disposed.
+export async function rpcCall(
+  method,
+  params,
+  contextOrFetch,
+  validate = (result) => result,
+) {
+  const context =
+    contextOrFetch instanceof RpcContext
+      ? contextOrFetch
+      : new RpcContext(
+          typeof contextOrFetch === "function" ? { fetch: contextOrFetch } : {},
+        );
+  try {
+    return await context.call(RPC_URL, method, params, validate);
+  } finally {
+    if (!(contextOrFetch instanceof RpcContext)) context.dispose();
+  }
+}
+
+export function isMain(metaUrl) {
+  return Boolean(
+    process.argv[1] &&
+    pathToFileURL(path.resolve(process.argv[1])).href === metaUrl,
+  );
+}
+
+// pnpm may forward one literal separator. Unknown/duplicate flags and surplus
+// positional values are errors, before creating a context or reading artifacts.
+export function parseReadOnlyArgs(argv, { accountRequired = false, usage }) {
+  const args = argv[0] === "--" ? argv.slice(1) : argv;
+  let stdoutOnly = false;
+  let accountId;
+  for (const arg of args) {
+    if (arg === "--stdout-only" && !stdoutOnly) stdoutOnly = true;
+    else if (accountRequired && accountId === undefined && !arg.startsWith("-"))
+      accountId = validateTestnetAccount(arg, "contract account");
+    else throw new Error(usage);
+  }
+  if (accountRequired && !accountId) throw new Error(usage);
+  return { stdoutOnly, accountId };
+}
+
+// One scoped context, one disposal, including failed verification. Run evidence
+// belongs OUTSIDE immutable attribution records and snapshot fingerprints.
+export async function historicalRun(reads, maxAttempts, options, verify) {
+  const context = new HistoricalRpcContext({
+    ...options,
+    reads,
+    limits: {
+      ...options?.limits,
+      maxAttempts: Math.min(
+        maxAttempts,
+        options?.limits?.maxAttempts ?? maxAttempts,
+      ),
+    },
   });
-  if (!response.ok) throw new Error(`RPC HTTP ${response.status}`);
-  const payload = await response.json();
-  if (payload.error) throw new Error(JSON.stringify(payload.error));
-  return payload.result;
+  try {
+    const value = await verify(context);
+    context.check();
+    return { value, runProvenance: context.provenance() };
+  } catch (cause) {
+    const error = new Error(
+      cause instanceof Error ? cause.message : "Historical verification failed",
+      { cause },
+    );
+    error.code =
+      cause instanceof LiveRpcError ? cause.code : "ERR_VERIFICATION";
+    error.runProvenance = context.provenance();
+    throw error;
+  } finally {
+    context.dispose();
+  }
+}
+
+export function verificationFailure(error) {
+  return {
+    status: "FAILED",
+    error: {
+      code: error?.code ?? "ERR_VERIFICATION",
+      message: error instanceof Error ? error.message : "Verification failed",
+    },
+    runProvenance: error?.runProvenance ?? null,
+  };
+}
+
+// Write only already-verified results. Same-directory exclusive temp + rename
+// means a failed write cannot truncate a previously successful artifact.
+export async function writeJsonAtomic(file, value) {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    await rename(temporary, file);
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 export function verifyDeploymentTransaction(manifest, transaction) {
