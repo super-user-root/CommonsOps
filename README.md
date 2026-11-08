@@ -46,6 +46,7 @@ evidence for all of it.
 - [See it](#see-it)
 - [Explore without running anything](#explore-without-running-anything)
 - [Run it yourself — do X, see Y](#run-it-yourself--do-x-see-y)
+- [Try the live contract — one command](#try-the-live-contract--one-command)
 - [Live onchain evidence (testnet)](#live-onchain-evidence-testnet)
 - [Claim → evidence map](#claim--evidence-map)
 - [What the social track asks vs. what CommonsOps does](#what-the-social-track-asks-vs-what-commonsops-does)
@@ -197,6 +198,51 @@ faucet is needed.
 
 For development, `pnpm dev`. For per-command setup details and artifact paths
 see [docs/COMMANDS.md](docs/COMMANDS.md).
+
+## Try the live contract — one command
+
+No clone, no install for the read-only views — paste a `curl` and read the
+deployed registry at `commonsops.testnet` straight from NEAR testnet RPC.
+
+**What is the registry right now?** (final block, read-only)
+
+```sh
+curl -sS -X POST https://rpc.testnet.near.org -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"try","method":"query","params":{"request_type":"call_function","account_id":"commonsops.testnet","method_name":"get_template","args_base64":"eyJ0ZW1wbGF0ZV9pZCI6ICIwIn0=","finality":"final"}}'
+```
+
+→ returns template 0 ("Public documentation maintenance", 0.5 NEAR per cycle, DAO `commonsops-dao.sputnikv2.testnet`).
+
+**Is the judge-demo cycle still claimable?**
+
+```sh
+curl -sS -X POST https://rpc.testnet.near.org -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"try","method":"query","params":{"request_type":"call_function","account_id":"commonsops.testnet","method_name":"get_cycle","args_base64":"eyJjeWNsZV9rZXkiOiB7InRlbXBsYXRlX2lkIjogIjIiLCAicGVyaW9kX2luZGV4IjogIjAifX0=","finality":"final"}}'
+```
+
+→ returns cycle 2:0 with `"status": "OPEN"` and `"claim": null` while it is unclaimed — a judge claiming it will flip this to `CLAIMED` onchain.
+
+**Contract stage marker**
+
+```sh
+curl -sS -X POST https://rpc.testnet.near.org -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"try","method":"query","params":{"request_type":"call_function","account_id":"commonsops.testnet","method_name":"foundation_status","args_base64":"e30=","finality":"final"}}'
+```
+
+**Claim the open cycle yourself (one command, needs [near-cli](https://github.com/near/near-cli-rs) and a testnet account):**
+
+```sh
+near contract call-function as-transaction commonsops.testnet claim_cycle json-args '{"cycle_key":{"template_id":"2","period_index":"0"}}' prepaid-gas '100 TGas' attached-deposit '0 NEAR' sign-as <your-account>.testnet network-config testnet sign-with-keychain send
+```
+
+Claiming binds your account as both claimant and payout recipient onchain
+(zero deposit). Submitting evidence for your claim:
+
+```sh
+near contract call-function as-transaction commonsops.testnet submit_evidence json-args '{"cycle_key":{"template_id":"2","period_index":"0"},"repository_owner":"<owner>","repository_name":"<repo>","pull_request_number":"1","commit_sha":"<40-char-sha>"}' prepaid-gas '100 TGas' attached-deposit '0 NEAR' sign-as <your-account>.testnet network-config testnet sign-with-keychain send
+```
+
+Prefer the browser? The [live workspace](https://super-user-root.github.io/CommonsOps/)
+does the same through your connected wallet. Every state change is visible on
+[the explorer](https://explorer.testnet.near.org/accounts/commonsops.testnet)
+and in the [evidence table](#live-onchain-evidence-testnet).
 
 ## Live onchain evidence (testnet)
 
