@@ -10,7 +10,15 @@
 // returns none, capped); each template gets its own card group and its own
 // wallet-signed contributor actions bound to that template's live cycles.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { LatestTask } from "../../lib/live/latest-task.ts";
 import type { Evidence } from "@commonsops/domain";
 import {
   contributorCycleIntent,
@@ -29,9 +37,12 @@ import {
   type LiveRegistrySnapshot,
   type LiveTemplateRead,
 } from "../../lib/live/registry-reads.ts";
-import { LiveRpcError } from "../../lib/live/rpc.ts";
+import { LiveRpcError, RPC_LIMITS } from "../../lib/live/rpc.ts";
 import {
   describeLiveRequest,
+  settleWalletRequest,
+  TransactionEvidence,
+  SendAuthority,
   type LiveRequestState,
 } from "../../lib/live/transactions.ts";
 import { useLiveWallet } from "./live-wallet-provider.tsx";
@@ -50,24 +61,8 @@ const METHOD_LABELS: Readonly<Record<ContributorMethod, string>> = {
   submit_evidence: "Submit evidence",
 };
 
-const IDLE_REQUESTS: Readonly<Record<ContributorMethod, LiveRequestState>> =
-  Object.freeze({
-    claim_cycle: Object.freeze({ status: "IDLE" }),
-    release_claim: Object.freeze({ status: "IDLE" }),
-    expire_cycle_or_claim: Object.freeze({ status: "IDLE" }),
-    submit_evidence: Object.freeze({ status: "IDLE" }),
-  });
-
-type ReadState =
-  | { readonly status: "LOADING" }
-  | { readonly status: "READY"; readonly snapshot: LiveRegistrySnapshot }
-  | {
-      readonly status: "ERROR";
-      readonly code: string;
-      readonly message: string;
-    };
-
 interface DerivedActions {
+  readonly contextKey: string;
   readonly view: ContributorCycleView;
   // submit_evidence is present only when the canonical evidence draft is
   // valid; an invalid draft disables that one send instead of inventing args.
@@ -113,7 +108,22 @@ export function LiveRegistrySection({
   registryAccountId: string;
 }) {
   const wallet = useLiveWallet();
-  const [readState, setReadState] = useState<ReadState>({ status: "LOADING" });
+  const reads = useMemo(() => new LatestTask<LiveRegistrySnapshot>(), []);
+  const readState = useSyncExternalStore(
+    reads.subscribe,
+    reads.getSnapshot,
+    reads.getSnapshot,
+  );
+  const evidence = useMemo(() => new TransactionEvidence(), []);
+  const snapshotAuthority = useMemo(() => new SendAuthority(), []);
+  const [, evidenceVersion] = useState(0);
+  const recordRequest = useCallback(
+    (key: string, state: LiveRequestState) => {
+      evidence.set(key, state);
+      evidenceVersion((version) => version + 1);
+    },
+    [evidence],
+  );
 
   const config = useMemo(() => assertTestnet("testnet"), []);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -125,25 +135,47 @@ export function LiveRegistrySection({
     track.scrollBy({ left: direction * track.clientWidth, behavior: "smooth" });
   }, []);
 
-  const refresh = useCallback(async () => {
-    setReadState({ status: "LOADING" });
-    try {
-      const snapshot = await fetchLiveRegistrySnapshot(
-        config,
-        registryAccountId,
-      );
-      setReadState({ status: "READY", snapshot });
-    } catch (error) {
-      const failure = failureText(error);
-      setReadState({ status: "ERROR", ...failure });
-    }
-  }, [config, registryAccountId]);
-
+  const refresh = useCallback(() => {
+    snapshotAuthority.invalidate(); // Synchronous, before React publishes loading.
+    const deadline = performance.now() + RPC_LIMITS.deadlineMs;
+    return reads.run(
+      registryAccountId,
+      (signal) =>
+        fetchLiveRegistrySnapshot(config, registryAccountId, { signal }),
+      false,
+      () => {
+        if (performance.now() >= deadline)
+          throw new LiveRpcError(
+            "ERR_RPC_DEADLINE",
+            "Refresh publication exceeded its deadline.",
+          );
+      },
+    );
+  }, [reads, config, registryAccountId, snapshotAuthority]);
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    return () => {
+      snapshotAuthority.invalidate();
+      reads.cancel();
+    };
+  }, [refresh, reads, snapshotAuthority]);
 
-  const snapshot = readState.status === "READY" ? readState.snapshot : null;
+  const snapshot =
+    readState.dataKey === registryAccountId ? readState.data : null;
+  const fresh =
+    readState.status === "READY" && readState.dataKey === registryAccountId;
+  snapshotAuthority.update(
+    JSON.stringify([
+      registryAccountId,
+      snapshot?.block.hash,
+      snapshot?.block.height,
+      fresh,
+      wallet.accountId,
+    ]),
+  );
+  const loading = readState.status === "LOADING" || readState.status === "IDLE";
+  const readFailure =
+    readState.status === "ERROR" ? failureText(readState.error) : null;
   const managerId = useMemo(() => {
     for (const read of snapshot?.templates ?? []) {
       if (read.kind === "READY") return read.template.manager_id;
@@ -180,14 +212,37 @@ export function LiveRegistrySection({
         </p>
       </div>
 
+      {/* One infrastructure alert/Retry in this live region. The separate
+          state-pattern gallery below contains an explicitly labelled example. */}
+      {readFailure ? (
+        <div
+          className="live-card live-unreachable"
+          role="alert"
+          data-live-rpc-error
+        >
+          <h3>Live registry read unavailable</h3>
+          <p>
+            Official NEAR testnet RPC could not verify this refresh (
+            {readFailure.code}). Check your connection or try again. No fallback
+            data is shown.
+          </p>
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => void refresh()}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
       <div className="live-meta" role="status" aria-live="polite">
-        {readState.status === "LOADING" ? (
+        {loading ? (
           <p>Querying {registryAccountId} at a NEAR testnet final block…</p>
         ) : null}
-        {readState.status === "ERROR" ? (
-          <p className="live-error" role="alert">
-            Live read failed ({readState.code}): {readState.message} No fallback
-            data is shown.
+        {snapshot && !fresh ? (
+          <p>
+            <strong>Stale snapshot — previous verified data.</strong> Signing is
+            disabled until a successful refresh.
           </p>
         ) : null}
         {snapshot ? (
@@ -198,22 +253,30 @@ export function LiveRegistrySection({
               <span className="exact-value">
                 {snapshot.block.timestampNs} ns
               </span>{" "}
-              ({nsToDate(snapshot.block.timestampNs)}). Read-only JSON-RPC to{" "}
-              <code>{config.nodeUrl}</code>. Foundation status:{" "}
-              <code>{snapshot.foundationStatus}</code>
-              {snapshot.enumerationComplete
+              ({nsToDate(snapshot.block.timestampNs)}). Validated read
+              endpoint(s):{" "}
+              <code>
+                {snapshot.endpoints.join(", ") || "provenance unavailable"}
+              </code>
+              . Foundation status: <code>{snapshot.foundationStatus}</code>
+              {snapshot.enumerationStop === "COMPLETE"
                 ? ""
-                : " — template enumeration stopped at the cap; more templates may exist onchain."}
+                : snapshot.enumerationStop === "CAPPED"
+                  ? " — template enumeration stopped at the cap; more templates may exist onchain."
+                  : " — template discovery interrupted by a template error; later IDs were not read."}
             </p>
           </>
         ) : null}
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() => void refresh()}
-        >
-          {readState.status === "LOADING" ? "Reading…" : "Re-read live state"}
-        </button>
+        {!readFailure ? (
+          <button
+            className="button secondary"
+            type="button"
+            disabled={loading}
+            onClick={() => void refresh()}
+          >
+            {loading ? "Reading…" : "Re-read live state"}
+          </button>
+        ) : null}
       </div>
 
       {snapshot ? (
@@ -253,19 +316,23 @@ export function LiveRegistrySection({
                   read={read}
                   registryAccountId={registryAccountId}
                   observedBlockTimestampNs={snapshot.block.timestampNs}
+                  fresh={fresh}
+                  snapshotAuthority={snapshotAuthority}
+                  evidence={evidence}
+                  recordRequest={recordRequest}
                   onSent={() => void refresh()}
                 />
               ) : (
                 <article
                   className="live-card live-template-error"
                   key={read.templateId}
-                  role="alert"
+                  role={fresh ? "alert" : undefined}
                 >
                   <h3>Template {read.templateId} — read failed</h3>
                   <p>
-                    {read.code}: {read.message} No fallback data is shown, and
-                    templates after this one were not read. Re-read the live
-                    state to try again.
+                    {read.code}: {read.message} No cycle availability is
+                    inferred from failed reads. Other verified template groups
+                    may still be shown; re-read the live state to try again.
                   </p>
                 </article>
               ),
@@ -273,6 +340,25 @@ export function LiveRegistrySection({
           </div>
         </>
       ) : null}
+
+      <article
+        className="live-card"
+        aria-label="Transaction evidence from this browser"
+      >
+        <h3>Transaction evidence from this browser</h3>
+        <p>
+          Wallet-reported sends are retained across refreshes, including
+          template read failures. They do not certify execution success or DAO
+          payment.
+        </p>
+        {evidence.records().map((record, index) => (
+          <p key={`${record.transactionHash}-${index}`}>
+            <a href={record.explorerUrl} target="_blank" rel="noreferrer">
+              {record.method}: {record.transactionHash}
+            </a>
+          </p>
+        ))}
+      </article>
 
       <div className="live-grid">
         <article className="live-card" aria-labelledby="live-operator-heading">
@@ -315,21 +401,31 @@ function LiveTemplateGroup({
   read,
   registryAccountId,
   observedBlockTimestampNs,
+  fresh,
+  snapshotAuthority,
+  evidence,
+  recordRequest,
   onSent,
 }: {
   read: Extract<LiveTemplateRead, { kind: "READY" }>;
   registryAccountId: string;
   observedBlockTimestampNs: string;
+  fresh: boolean;
+  snapshotAuthority: SendAuthority;
+  evidence: TransactionEvidence;
+  recordRequest: (key: string, state: LiveRequestState) => void;
   onSent: () => void;
 }) {
   const wallet = useLiveWallet();
-  const [derived, setDerived] = useState<DerivedActions | null>(null);
-  const [derivedError, setDerivedError] = useState<{
-    code: string;
-    message: string;
-  } | null>(null);
+  const derivation = useMemo(() => new LatestTask<DerivedActions>(), []);
+  const derivedState = useSyncExternalStore(
+    derivation.subscribe,
+    derivation.getSnapshot,
+    derivation.getSnapshot,
+  );
   const [evidenceDraft, setEvidenceDraft] = useState(EMPTY_EVIDENCE_DRAFT);
-  const [requestStates, setRequestStates] = useState(IDLE_REQUESTS);
+  const inputAuthority = useMemo(() => new SendAuthority(), []);
+  useEffect(() => () => inputAuthority.invalidate(), [inputAuthority]);
 
   const template = read.template;
   const templateId = read.templateId;
@@ -341,73 +437,91 @@ function LiveTemplateGroup({
     ? null
     : (read.nextCycle?.cycle ?? read.latestCycle?.cycle ?? null);
 
+  const contextKey = JSON.stringify([
+    registryAccountId,
+    actionableCycle,
+    observedBlockTimestampNs,
+    wallet.accountId,
+  ]);
+  const inputKey = JSON.stringify([contextKey, evidenceDraft, fresh]);
+  inputAuthority.update(inputKey);
+  // The editor may retain the last validated cycle view for these same inputs;
+  // its obsolete intents are never read by the send path.
+  const evidenceEditable =
+    fresh &&
+    derivedState.data?.contextKey === contextKey &&
+    derivedState.data.view.actions.submit_evidence.allowed;
+  // Render-time key gating invalidates old intents BEFORE effects run.
+  const derived = fresh ? derivation.current(inputKey) : null;
+  const derivedError =
+    fresh && derivedState.status === "ERROR" && derivedState.key === inputKey
+      ? failureText(derivedState.error)
+      : null;
+  const sendGate = useRef({ inputKey, fresh, accountId: wallet.accountId });
+  sendGate.current = { inputKey, fresh, accountId: wallet.accountId };
+  const requestKey = (method: ContributorMethod) =>
+    JSON.stringify([
+      registryAccountId,
+      templateId,
+      actionableCycle?.key.period_index,
+      method,
+    ]);
+
   useEffect(() => {
-    if (!actionableCycle) {
-      setDerived(null);
+    if (!actionableCycle || !fresh) {
+      derivation.cancel();
       return;
     }
-    let cancelled = false;
     const connectedAccountId = wallet.accountId;
-    void (async () => {
-      try {
-        const view = await deriveContributorCycleView(
-          actionableCycle,
-          observedBlockTimestampNs,
-          connectedAccountId,
-        );
-        const cycleMethods = CONTRIBUTOR_METHODS.filter(
-          (method) => method !== "submit_evidence",
-        );
-        const intents: {
-          -readonly [M in ContributorMethod]?: ContributorTransactionIntent;
-        } = {};
-        await Promise.all(
-          cycleMethods.map(async (method) => {
-            intents[method] = await contributorCycleIntent(
-              registryAccountId,
-              method,
-              actionableCycle,
-              observedBlockTimestampNs,
-              connectedAccountId,
-            );
-          }),
-        );
-        let evidencePreview: Evidence | null = null;
-        let evidenceError: string | null = null;
-        if (view.actions.submit_evidence.allowed) {
-          try {
-            const preview = await evidenceSubmissionPreview(
-              registryAccountId,
-              actionableCycle,
-              observedBlockTimestampNs,
-              connectedAccountId,
-              evidenceDraft,
-            );
-            evidencePreview = preview.evidence;
-            intents.submit_evidence = preview.intent;
-          } catch (error) {
-            evidenceError =
-              error instanceof Error ? error.message : String(error);
-          }
+    void derivation.run(inputKey, async () => {
+      const view = await deriveContributorCycleView(
+        actionableCycle,
+        observedBlockTimestampNs,
+        connectedAccountId,
+      );
+      const cycleMethods = CONTRIBUTOR_METHODS.filter(
+        (method) => method !== "submit_evidence",
+      );
+      const intents: {
+        -readonly [M in ContributorMethod]?: ContributorTransactionIntent;
+      } = {};
+      await Promise.all(
+        cycleMethods.map(async (method) => {
+          intents[method] = await contributorCycleIntent(
+            registryAccountId,
+            method,
+            actionableCycle,
+            observedBlockTimestampNs,
+            connectedAccountId,
+          );
+        }),
+      );
+      let evidencePreview: Evidence | null = null;
+      let evidenceError: string | null = null;
+      if (view.actions.submit_evidence.allowed) {
+        try {
+          const preview = await evidenceSubmissionPreview(
+            registryAccountId,
+            actionableCycle,
+            observedBlockTimestampNs,
+            connectedAccountId,
+            evidenceDraft,
+          );
+          evidencePreview = preview.evidence;
+          intents.submit_evidence = preview.intent;
+        } catch (error) {
+          evidenceError =
+            error instanceof Error ? error.message : String(error);
         }
-        if (cancelled) return;
-        setDerived({
-          view,
-          intents,
-          evidencePreview,
-          evidenceError,
-        });
-      } catch (error) {
-        if (cancelled) return;
-        // Honest derivation failure: no intents, named reason.
-        setDerived(null);
-        setDerivedError(failureText(error));
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      return { contextKey, view, intents, evidencePreview, evidenceError };
+    });
+    return () => derivation.cancel();
   }, [
+    derivation,
+    inputKey,
+    contextKey,
+    fresh,
     actionableCycle,
     observedBlockTimestampNs,
     wallet.accountId,
@@ -416,42 +530,48 @@ function LiveTemplateGroup({
   ]);
 
   async function handleSend(method: ContributorMethod) {
-    const intent = derived?.intents[method];
-    if (!intent || !wallet.accountId) return;
-    setRequestStates((previous) => ({
-      ...previous,
-      [method]: { status: "PENDING", method } as LiveRequestState,
-    }));
-    const outcome = await wallet.sendIntent(intent, registryAccountId);
+    const gate = sendGate.current;
+    const intent = derivation.current(gate.inputKey)?.intents[method];
+    const key = requestKey(method);
+    if (
+      !gate.fresh ||
+      !intent ||
+      !gate.accountId ||
+      !intent.actionAllowed ||
+      evidence.get(key).status === "PENDING"
+    )
+      return;
+    const snapshotToken = snapshotAuthority.capture(
+      gate.accountId,
+      () => sendGate.current.fresh,
+    );
+    const token = inputAuthority.capture(
+      gate.accountId,
+      () =>
+        snapshotToken.valid() &&
+        derivation.current(gate.inputKey) !== null &&
+        sendGate.current.accountId === gate.accountId,
+    );
+    recordRequest(key, { status: "PENDING", method });
+    const outcome = await settleWalletRequest(() =>
+      wallet.sendIntent(intent, registryAccountId, token),
+    );
     if (outcome.kind === "SUCCESS") {
-      setRequestStates((previous) => ({
-        ...previous,
-        [method]: {
-          status: "SUCCESS",
-          method,
-          transactionHash: outcome.transactionHash,
-          explorerUrl: outcome.explorerUrl,
-        } as LiveRequestState,
-      }));
-      // Re-query the live registry so the view reflects the signed outcome.
+      recordRequest(key, {
+        status: "SUCCESS",
+        method,
+        transactionHash: outcome.transactionHash,
+        explorerUrl: outcome.explorerUrl,
+      });
       onSent();
       return;
     }
-    setRequestStates((previous) => ({
-      ...previous,
-      [method]:
-        outcome.kind === "REJECTED"
-          ? ({
-              status: "REJECTED",
-              method,
-              detail: outcome.detail,
-            } as LiveRequestState)
-          : ({
-              status: "ERROR",
-              method,
-              message: outcome.message,
-            } as LiveRequestState),
-    }));
+    recordRequest(
+      key,
+      outcome.kind === "REJECTED"
+        ? { status: "REJECTED", method, detail: outcome.detail }
+        : { status: "ERROR", method, message: outcome.message },
+    );
   }
 
   return (
@@ -578,7 +698,40 @@ function LiveTemplateGroup({
           <h3 id={`live-actions-${templateId}-heading`}>
             Contributor actions for template {templateId} (wallet-signed)
           </h3>
-          {!actionableCycle ? (
+          {evidenceEditable ? (
+            <div className="live-evidence-inputs">
+              {(
+                [
+                  ["repositoryOwner", "Repository owner"],
+                  ["repositoryName", "Repository name"],
+                  ["pullRequestNumber", "Pull request number"],
+                  ["commitSha", "Commit SHA (40 hex characters)"],
+                ] as const
+              ).map(([field, label]) => (
+                <label key={field}>
+                  {label}
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={evidenceDraft[field]}
+                    onChange={(event) => {
+                      inputAuthority.invalidate();
+                      setEvidenceDraft((draft) => ({
+                        ...draft,
+                        [field]: event.target.value,
+                      }));
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          ) : null}
+          {!fresh ? (
+            <p>
+              Stale snapshot — contributor signing disabled until refreshed.
+            </p>
+          ) : !actionableCycle ? (
             <p>
               No cycle of this template can be acted on yet — the actions appear
               once a cycle exists.
@@ -620,8 +773,9 @@ function LiveTemplateGroup({
                 {CONTRIBUTOR_METHODS.map((method) => {
                   const intent = derived.intents[method];
                   const availability = derived.view.actions[method];
-                  const requestState = requestStates[method];
+                  const requestState = evidence.get(requestKey(method));
                   const sendable =
+                    fresh &&
                     intent !== undefined &&
                     intent.actionAllowed &&
                     availability.allowed &&
@@ -635,67 +789,6 @@ function LiveTemplateGroup({
                       </p>
                       {method === "submit_evidence" && availability.allowed ? (
                         <div className="live-evidence-inputs">
-                          <label>
-                            Repository owner
-                            <input
-                              type="text"
-                              autoComplete="off"
-                              spellCheck={false}
-                              value={evidenceDraft.repositoryOwner}
-                              onChange={(event) =>
-                                setEvidenceDraft((draft) => ({
-                                  ...draft,
-                                  repositoryOwner: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Repository name
-                            <input
-                              type="text"
-                              autoComplete="off"
-                              spellCheck={false}
-                              value={evidenceDraft.repositoryName}
-                              onChange={(event) =>
-                                setEvidenceDraft((draft) => ({
-                                  ...draft,
-                                  repositoryName: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Pull request number
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              autoComplete="off"
-                              spellCheck={false}
-                              value={evidenceDraft.pullRequestNumber}
-                              onChange={(event) =>
-                                setEvidenceDraft((draft) => ({
-                                  ...draft,
-                                  pullRequestNumber: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Commit SHA (40 hex characters)
-                            <input
-                              type="text"
-                              autoComplete="off"
-                              spellCheck={false}
-                              value={evidenceDraft.commitSha}
-                              onChange={(event) =>
-                                setEvidenceDraft((draft) => ({
-                                  ...draft,
-                                  commitSha: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
                           {derived.evidenceError ? (
                             <p className="live-error" role="alert">
                               Evidence validation failed:{" "}

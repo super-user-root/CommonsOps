@@ -82,7 +82,7 @@ function stubDeps(views: {
         if (!record.template_id) throw new Error("stub: template_id missing");
         const value = views.template.get(record.template_id);
         if (value === "THROW") {
-          throw new LiveRpcError("ERR_RPC_HTTP_STATUS", "upstream 503");
+          throw new LiveRpcError("ERR_RPC_CONTRACT", "contract view failed");
         }
         return value;
       }
@@ -91,7 +91,7 @@ function stubDeps(views: {
         if (!key) throw new Error("stub: cycle_key missing");
         const value = views.cycle.get(`${key.template_id}:${key.period_index}`);
         if (value === "THROW") {
-          throw new LiveRpcError("ERR_RPC_HTTP_STATUS", "upstream 503");
+          throw new LiveRpcError("ERR_RPC_CONTRACT", "contract view failed");
         }
         return value;
       }
@@ -159,7 +159,7 @@ test("enumerates every registered template with latest and next cycles", async (
       ).cycle_key;
       return `${key.template_id}:${key.period_index}`;
     });
-  assert.deepEqual(cycleKeys, ["0:0", "0:1", "1:0", "1:1", "2:0"]);
+  assert.deepEqual(cycleKeys.sort(), ["0:0", "0:1", "1:0", "1:1", "2:0"]);
 });
 
 test("a missing template ends the enumeration as complete", async () => {
@@ -203,7 +203,7 @@ test("a template erroring after a success is a named per-template error, not a g
   assert.equal(zero.template.id, "0");
   assert.ok(one?.kind === "ERROR");
   assert.equal(one.templateId, "1");
-  assert.equal(one.code, "ERR_RPC_HTTP_STATUS");
+  assert.equal(one.code, "ERR_RPC_CONTRACT");
   assert.equal(snapshot.enumerationComplete, false);
 });
 
@@ -220,7 +220,7 @@ test("a cycle read failure is also a per-template error", async () => {
   const only = snapshot.templates[0];
   assert.ok(only?.kind === "ERROR");
   assert.equal(only.templateId, "0");
-  assert.equal(only.code, "ERR_RPC_HTTP_STATUS");
+  assert.equal(only.code, "ERR_RPC_CONTRACT");
 });
 
 test("malformed cycle data fails that template with the hardened parse error", async () => {
@@ -256,6 +256,108 @@ test("the cap stops enumeration and is reported as incomplete", async () => {
   assert.equal(MAX_TEMPLATE_ENUMERATION, 16);
   assert.equal(snapshot.templates.length, 2);
   assert.equal(snapshot.enumerationComplete, false);
+});
+
+test("multi-template cycle failures stay ERROR, later valid groups survive, and order is stable", async () => {
+  let active = 0;
+  let peak = 0;
+  const deps: RegistryReadDeps = {
+    fetchBlockHeader: async () => BLOCK,
+    fetchView: async (_account, method, args, block) => {
+      assert.strictEqual(block, BLOCK);
+      if (method === "foundation_status") return FOUNDATION;
+      const key = args as {
+        template_id?: string;
+        cycle_key?: { template_id: string; period_index: string };
+      };
+      if (method === "get_template")
+        return key.template_id === "6"
+          ? null
+          : templateFixture(key.template_id!);
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) =>
+        setTimeout(resolve, (6 - Number(key.cycle_key!.template_id)) * 2),
+      );
+      active--;
+      if (["0", "1"].includes(key.cycle_key!.template_id))
+        throw new LiveRpcError("ERR_RPC_CONTRACT", "cycle failed");
+      return cycleFixture(
+        key.cycle_key!.template_id,
+        key.cycle_key!.period_index,
+        "OPEN",
+      );
+    },
+  };
+  const snapshot = await buildRegistrySnapshot(deps, REGISTRY);
+  assert.deepEqual(
+    snapshot.templates.map((read) => read.templateId),
+    ["0", "1", "2", "3", "4", "5"],
+  );
+  assert.deepEqual(
+    snapshot.templates.map((read) => read.kind),
+    ["ERROR", "ERROR", "READY", "READY", "READY", "READY"],
+  );
+  assert.ok(peak <= 4);
+  assert.equal(snapshot.enumerationStop, "COMPLETE");
+});
+
+test("infrastructure errors reject the refresh, cancellation settles sibling cycle reads", async () => {
+  const controller = new AbortController();
+  let cycles = 0;
+  const deps: RegistryReadDeps = {
+    signal: controller.signal,
+    cancel: () => controller.abort(),
+    fetchBlockHeader: async () => BLOCK,
+    fetchView: async (_account, method, args) => {
+      if (method === "foundation_status") return FOUNDATION;
+      const key = args as {
+        template_id?: string;
+        cycle_key?: { template_id: string };
+      };
+      if (method === "get_template")
+        return key.template_id === "4"
+          ? null
+          : templateFixture(key.template_id!);
+      cycles++;
+      if (key.cycle_key!.template_id === "0") {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        throw new LiveRpcError("ERR_RPC_SERVER", "upstream");
+      }
+      return new Promise(() => {});
+    },
+  };
+  await assert.rejects(
+    buildRegistrySnapshot(deps, REGISTRY),
+    (error: unknown) =>
+      error instanceof LiveRpcError && error.code === "ERR_RPC_SERVER",
+  );
+  assert.equal(cycles, 4);
+  assert.equal(controller.signal.aborted, true);
+  await assert.rejects(buildRegistrySnapshot(deps, REGISTRY));
+});
+
+test("template limits reject invalid overrides and clamp to sixteen", async () => {
+  for (const cap of [NaN, Infinity, -1, 0, 1.5])
+    await assert.rejects(
+      buildRegistrySnapshot(
+        stubDeps({ template: new Map(), cycle: new Map() }),
+        REGISTRY,
+        cap,
+      ),
+    );
+  const deps = stubDeps({
+    template: new Map(
+      Array.from({ length: 20 }, (_, id) => [
+        String(id),
+        templateFixture(String(id), { active: false }),
+      ]),
+    ),
+    cycle: new Map(),
+  });
+  const snapshot = await buildRegistrySnapshot(deps, REGISTRY, 100);
+  assert.equal(snapshot.templates.length, 16);
+  assert.equal(snapshot.enumerationStop, "CAPPED");
 });
 
 test("a paused template is read but gets no cycle reads", async () => {

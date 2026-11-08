@@ -130,7 +130,7 @@ export function createTemplateIntent(
     network: "TESTNET",
     signingEnabled: false,
     disabledReason: registryAccountId
-      ? "Wallet connector is not configured."
+      ? "Recorded preview — signing disabled here; use live registry above."
       : "No reviewed testnet registry deployment is configured.",
   };
 }
@@ -168,7 +168,7 @@ export function templateActionIntent(
     network: "TESTNET",
     signingEnabled: false,
     disabledReason: registryAccountId
-      ? "Wallet connector is not configured."
+      ? "Recorded preview — signing disabled here; use live registry above."
       : "No reviewed testnet registry deployment is configured.",
   };
 }

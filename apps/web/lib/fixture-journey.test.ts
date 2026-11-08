@@ -5,7 +5,8 @@ import {
   fixtureJourneyConstants,
 } from "./fixture-journey.ts";
 
-const expectedWalletOnlyReason = "Wallet connector is not configured.";
+const expectedWalletOnlyReason =
+  "Recorded preview — signing disabled here; use live registry above.";
 const expectedClaimUnavailableReason = `Only an open, live cycle can be claimed. ${expectedWalletOnlyReason}`;
 const expectedExpireUnavailableReason = `Neither the claim nor work deadline has elapsed. ${expectedWalletOnlyReason}`;
 
@@ -101,7 +102,10 @@ test("derives the recorded claimed cycle identity, evidence and all four disable
     assert.equal(intent.receiverId, "commonsops.testnet");
     assert.equal(intent.attachedDepositYocto, "0");
     assert.equal(intent.signingEnabled, false);
-    assert.match(intent.disabledReason, /Wallet connector is not configured/);
+    assert.match(
+      intent.disabledReason,
+      /Recorded preview — signing disabled here/,
+    );
   }
 
   const claim = contributor.intents.find(

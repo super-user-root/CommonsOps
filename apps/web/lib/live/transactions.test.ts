@@ -230,6 +230,35 @@ test("wallet failures surface the wallet's own message, never success", async ()
   assert.match(outcome.message, /enough balance/);
 });
 
+test("construction, initialization and wallet selection errors always settle to ERROR", async () => {
+  const intent = await claimantIntent("release_claim");
+  let called = false;
+  const construction = await sendContributorIntent(
+    async () => {
+      called = true;
+      return [];
+    },
+    { ...intent, attachedDepositYocto: "1" as never },
+    REGISTRY,
+  );
+  assert.equal(construction.kind, "ERROR");
+  assert.equal(called, false);
+  for (const phase of [
+    "selector init",
+    "wallet selection",
+    "action construction",
+  ]) {
+    const outcome = await sendContributorIntent(
+      async () => {
+        throw new Error(`${phase} failed`);
+      },
+      intent,
+      REGISTRY,
+    );
+    assert.equal(outcome.kind, "ERROR");
+  }
+});
+
 test("describeLiveRequest labels every state truthfully", () => {
   assert.match(
     describeLiveRequest({ status: "IDLE" }),

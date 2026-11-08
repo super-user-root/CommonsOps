@@ -672,7 +672,7 @@ function signingReason(
     operation === "link" && !reviewedRegistryAccountId
       ? "No reviewed testnet registry account is configured. "
       : "";
-  return `${profileReason}${registryReason}Unsigned preview only: no wallet connector is configured, this is not executable or authorized.`;
+  return `${profileReason}${registryReason}Recorded preview — signing disabled here; use live registry above. DAO payout stays outside this app.`;
 }
 
 function addProposalIntent(

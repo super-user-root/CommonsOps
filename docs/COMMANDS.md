@@ -21,15 +21,15 @@ See installed toolchains and cached dependencies. The first setup requires npm/c
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm lint`            | Prettier checks actual source/config/docs, Node checks runner syntax, and `cargo fmt --check` checks Rust. Formatting errors fail.                                                                                        |
 | `pnpm typecheck`       | TypeScript checks domain, adapter, web, and tests (including JavaScript runner files); any type error fails.                                                                                                              |
-| `pnpm test`            | Three deterministic tests prove immutable placeholder exports and accurate shell metadata.                                                                                                                                |
-| `pnpm test:contract`   | Rust unit tests round-trip initialized scaffold state and reject implicit default initialization. Uses `--locked --offline`.                                                                                              |
+| `pnpm test`            | Three foundation tests check immutable configuration and shell metadata. Domain/adapter/web tests run through recursive `pnpm typecheck`.                                                                                 |
+| `pnpm test:contract`   | Rust registry business/invariant unit tests, including initialization, claims, deadlines, storage and proposal guards. Uses `--locked --offline`.                                                                         |
 | `pnpm build`           | Next.js creates a production build under `apps/web/.next`; the overview is statically generated with no remote data/fonts.                                                                                                |
 | `pnpm build:contract`  | Rust creates `contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm`; Node validates WASM, exact method exports, and absence of transfer/promise-creation imports. Uses `--locked --offline`. |
-| `pnpm test:production` | Starts the existing production build on an ephemeral loopback port, checks HTTP 200, foundation disclosures, metadata, absence of transaction controls, and HTTP 404; stops the server. Build first.                      |
+| `pnpm test:production` | Starts the existing production build on an ephemeral loopback port; checks HTTP 200, live-surface/recorded-preview disclosures, metadata and HTTP 404; stops the server. Build first.                                     |
 | `pnpm verify:offline`  | Runs every check above in order and prints a final PASS only if all pass. No skipped WASM fallback.                                                                                                                       |
 | `pnpm format`          | Applies Prettier to project files; use when deliberately fixing formatting, not to bypass checks.                                                                                                                         |
 
-`verify:offline` disables Next telemetry and sets Cargo offline mode. It does not call NEAR RPC, GitHub, an indexer, a wallet, or another external service. The production smoke uses loopback HTTP, not a public network endpoint. Dependencies, platform-specific pnpm packages, Rust toolchain, and WASM target must already be available. Run setup again on a new host. This profile proves scaffold compilation and local shell behavior, **not** NEAR VM execution, deployment safety, treasury integration, or registry business correctness.
+`verify:offline` disables Next telemetry and sets Cargo offline mode. It does not call NEAR RPC, GitHub, an indexer, a wallet, or another external service. The production smoke uses loopback HTTP, not a public network endpoint. Dependencies, platform-specific pnpm packages, Rust toolchain, and WASM target must already be available. Run setup again on a new host. This profile proves offline unit/invariant behavior, compilation, WASM structure and local HTTP behavior. It does **not** by itself prove NEAR VM execution, deployed state, treasury integration, browser interaction or signing safety; use the separate recorded evidence and checks for those boundaries.
 
 ## Prepare a testnet deployment without signing
 
@@ -79,6 +79,37 @@ pnpm start
 ```
 
 Open the same loopback URL — see the same recorded journey in production mode, plus the live registry section: read-only testnet RPC reads run in the browser, and connecting a testnet wallet enables wallet-signed contributor transactions. The recorded stages stay immutable imported onchain data; the DAO payout flow stays out of the app. No secret environment defaults exist. `NEXT_TELEMETRY_DISABLED=1` is supplied by the verification runner/CI, not a credential. No deployment commands are provided.
+
+### Browser snapshot and recovery checks (no signing)
+
+The browser selects one final block hash per refresh, validates every query's
+block identity and preserves exact header timestamp digits. Primary/archival
+`near.org` testnet RPC reads share max4 HTTP requests, 96 attempts, 6s per
+fetch/body, two attempts per endpoint and a 40s overall deadline. Null-terminated
+template discovery is ordered and capped at16, followed by a four-worker cycle
+pool. Transport/timeouts/429/5xx/explicit transient RPC failures retry; schema,
+method/account/argument and contract failures do not blindly retry. Streams
+are bounded at 2 MiB, decoded contract results at 64 KiB, JSON depth at64,
+scanner nodes at300,000 and scanner work at4 MiB. Duplicate decoded JSON keys
+and ambiguous result/error envelopes are refused. Monotonic deadlines are
+checked after awaits/validation and before publication. Endpoint provenance
+lists only actual validated responses. Guarded sends revalidate snapshot/input/
+account generations and current selector accounts after each preparation await,
+bind signerId, and never automatically retry a transaction.
+
+Run `pnpm --filter @commonsops/web test` to exercise body failures, cancellation,
+retry classification, budgets, block pinning, lossless U64 parsing, ordered
+partial reads and async latest-input controllers. There is no installed React
+DOM test harness: source-wiring checks supplement controller tests, not a full
+rendering test. Browser verification must separately check `#live-registry`:
+Reading disabled; bounded success or one infrastructure alert/Retry; prior data
+marked stale and non-sendable; template-specific errors never imply absent
+cycles; transaction evidence survives refresh. The state-pattern gallery's
+ERROR alert is an intentional example outside this region. Scope header wallet
+checks to `#wallet-connect-button`; the library selector overlay may not expose
+`role=dialog`. Do not select/sign a wallet transaction for a no-signing check.
+Recorded-preview reasons refer only to those unsigned panels, not a globally
+unavailable wallet. These are testing instructions, not a claim they ran.
 
 ## CI
 

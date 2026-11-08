@@ -65,6 +65,83 @@ export function contributorWalletTransaction(
   });
 }
 
+export interface SendToken {
+  readonly signerId: string;
+  readonly valid: () => boolean;
+}
+// One generation guards synchronous input/snapshot/account changes as well as
+// unmount. A changed value cannot become valid again by returning to old input.
+export class SendAuthority {
+  private generation = 0;
+  private key: string | null = null;
+  invalidate(): void {
+    this.generation++;
+    this.key = null;
+  }
+  update(key: string): void {
+    if (key !== this.key) {
+      this.generation++;
+      this.key = key;
+    }
+  }
+  capture(signerId: string, additionallyValid: () => boolean): SendToken {
+    const generation = this.generation;
+    return Object.freeze({
+      signerId,
+      valid: () => generation === this.generation && additionallyValid(),
+    });
+  }
+}
+export function activeSelectorAccount(
+  accounts: readonly {
+    readonly accountId: string;
+    readonly active?: boolean;
+  }[],
+): string | null {
+  return (
+    (
+      accounts.find((account) => account.active) ??
+      accounts.find((account) => account.accountId)
+    )?.accountId ?? null
+  );
+}
+export async function guardedWalletSend<Prepared, Wallet, Converted>(
+  transaction: WalletTransaction,
+  token: SendToken,
+  deps: {
+    readonly prepare: () => Promise<Prepared>;
+    readonly select: (prepared: Prepared) => Promise<Wallet>;
+    readonly convert: (transaction: WalletTransaction) => Promise<Converted>;
+    readonly currentSigner: (prepared: Prepared) => string | null;
+    readonly sign: (
+      wallet: Wallet,
+      transaction: Converted,
+      signerId: string,
+    ) => Promise<readonly unknown[]>;
+  },
+): Promise<readonly unknown[]> {
+  const check = (prepared?: Prepared) => {
+    if (
+      !token.valid() ||
+      (prepared !== undefined &&
+        deps.currentSigner(prepared) !== token.signerId)
+    ) {
+      throw new Error(
+        "ERR_STALE_SEND: Inputs, snapshot or signer changed. No signing request was made.",
+      );
+    }
+  };
+  check();
+  const prepared = await deps.prepare();
+  check(prepared);
+  const wallet = await deps.select(prepared);
+  check(prepared);
+  const converted = await deps.convert(transaction);
+  check(prepared);
+  // No await between last check/current selector account and signing invocation.
+  return deps.sign(wallet, converted, token.signerId);
+}
+
 export interface WalletSelectorTransaction {
   readonly receiverId: string;
   readonly actions: Action[];
@@ -138,8 +215,8 @@ export async function sendContributorIntent(
   intent: ContributorTransactionIntent,
   registryAccountId: string,
 ): Promise<SendOutcome> {
-  const transaction = contributorWalletTransaction(intent, registryAccountId);
   try {
+    const transaction = contributorWalletTransaction(intent, registryAccountId);
     const outcomes = await send(transaction);
     const transactionHash = extractTransactionHash(outcomes);
     return Object.freeze({
@@ -180,6 +257,37 @@ export type LiveRequestState =
       readonly method: string;
       readonly message: string;
     };
+
+// Evidence lives above refreshable template groups. Successful outcomes are
+// append-only for the lifetime of this page, including removed/error groups.
+export class TransactionEvidence {
+  private states = new Map<string, LiveRequestState>();
+  private history: Extract<LiveRequestState, { status: "SUCCESS" }>[] = [];
+  get(key: string): LiveRequestState {
+    return this.states.get(key) ?? { status: "IDLE" };
+  }
+  set(key: string, state: LiveRequestState): void {
+    this.states.set(key, state);
+    if (state.status === "SUCCESS") this.history.push(state);
+  }
+  records(): readonly Extract<LiveRequestState, { status: "SUCCESS" }>[] {
+    return this.history.slice();
+  }
+}
+
+export async function settleWalletRequest(
+  send: () => Promise<SendOutcome>,
+): Promise<SendOutcome> {
+  try {
+    return await send();
+  } catch {
+    return {
+      kind: "ERROR",
+      message:
+        "Wallet initialization, selection or transaction construction failed. Check your wallet for the actual outcome.",
+    };
+  }
+}
 
 export function describeLiveRequest(state: LiveRequestState): string {
   switch (state.status) {

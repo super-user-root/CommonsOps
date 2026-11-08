@@ -116,7 +116,8 @@ test("builds pause and materialize intents with exact deposits", () => {
       attachedDepositYocto: "0",
       network: "TESTNET",
       signingEnabled: false,
-      disabledReason: "Wallet connector is not configured.",
+      disabledReason:
+        "Recorded preview — signing disabled here; use live registry above.",
     },
   );
   const materialize = templateActionIntent(
