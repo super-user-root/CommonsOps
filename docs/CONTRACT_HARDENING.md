@@ -1,6 +1,12 @@
 # Contract hardening measurements
 
-This file is updated by P1-T05 after a reproducible release build. Values are local toolchain evidence, not deployment or NEAR runtime acceptance.
+This historical P1-T05 record measures the original Windows Rust 1.98.0 release
+build. Values are local toolchain evidence, not NEAR runtime acceptance or a
+cross-platform byte-equality promise. Later Linux Verify produced 261,082 bytes,
+SHA-256 `17266c2ad8f0da768dc8716730cf3ef70157ebe8fe62973d6259e195856300c7`,
+which differs from the deployed Windows artifact below. Cause and behavioral
+equivalence are unestablished; [COMMANDS](COMMANDS.md#fresh-build-versus-immutable-deployed-wasm)
+separates fresh structural checks from the exact historical deployment fixture.
 
 - Rust: 1.98.0
 - near-sdk: 5.30.0
@@ -13,4 +19,7 @@ This file is updated by P1-T05 after a reproducible release build. Values are lo
 - Failed-action check: unauthorized replacement/link and reclaim attempts preserve serialized in-memory contract state under the unit harness.
 - Gas: no reliable NEAR VM gas benchmark is claimed by native unit tests. Testnet/sandbox gas observations remain P1-T06/P3-T05 evidence.
 
-Reproduce with `pnpm verify:offline`, remove only `contracts/registry/target/wasm32-unknown-unknown/release`, run `pnpm build:contract`, and compare the emitted SHA-256.
+Run `pnpm verify:offline` after the documented toolchain/cache setup to inspect
+your host's actual structural build result and hash. Compare like-for-like host
+builds separately; do not overwrite the immutable historical deployment fixture
+with an arbitrary local build or infer deployed-byte identity from structure.

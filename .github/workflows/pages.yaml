@@ -43,6 +43,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build static export
         run: pnpm --filter @commonsops/web exec next build
+      - name: Assert exported AI index and recorded proof
+        run: node --test tests/static-export.test.mjs
       - name: List export output
         run: ls -R apps/web/out | head -40
       - name: Upload Pages artifact

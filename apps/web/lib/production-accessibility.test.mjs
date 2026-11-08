@@ -113,3 +113,151 @@ test("production page exposes the live registry section with an enabled wallet c
   assert.match(styles, /\.live-card \{/);
   assert.match(styles, /\.account-chip \{/);
 });
+
+// Small generated-HTML inspection, not a browser layout/DOM harness. Closed
+// details still ship every child; only their native summary is initially shown.
+function inspectNativeDisclosures(html) {
+  const clean = html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+  const stack = [];
+  const targets = new Map();
+  let elements = 0;
+  let defaultElements = 0;
+  let disclosures = 0;
+  const voidTags = new Set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+  ]);
+  for (const match of clean.matchAll(/<(\/?)([a-z][a-z0-9-]*)([^>]*)>/gi)) {
+    const [, closing, rawTag, attributes] = match;
+    const tag = rawTag.toLowerCase();
+    if (closing) {
+      if (stack.at(-1)?.tag === tag) stack.pop();
+      continue;
+    }
+    const parent = stack.at(-1);
+    const hidden = Boolean(
+      parent?.hidden || (parent?.closed && tag !== "summary"),
+    );
+    elements++;
+    if (!hidden) defaultElements++;
+    const id = attributes.match(/\bid="([^"]+)"/)?.[1];
+    if (id) targets.set(id, { tag, hidden });
+    if (tag === "details") {
+      disclosures++;
+      assert.doesNotMatch(attributes, /\bopen(?:\s|=|$)/);
+    }
+    if (!voidTags.has(tag))
+      stack.push({ tag, hidden, closed: tag === "details" });
+  }
+  return { elements, defaultElements, disclosures, targets };
+}
+
+test("native closed disclosures keep full recorded proof in HTML and stage anchors outside", async () => {
+  const html = await readFile(builtPage, "utf8");
+  const result = inspectNativeDisclosures(html);
+  assert(result.disclosures >= 6);
+  assert(
+    result.defaultElements < result.elements * 0.6,
+    "default tour still exposes most proof elements",
+  );
+  for (const id of [
+    "journey",
+    "journey-heading",
+    "operator-stage",
+    "operator-stage-heading",
+    "contributor-stage",
+    "contributor-stage-heading",
+    "reviewer-stage",
+    "reviewer-stage-heading",
+    "state-handling",
+    "state-handling-heading",
+  ]) {
+    assert.equal(
+      result.targets.get(id)?.hidden,
+      false,
+      `${id} is inside a closed disclosure`,
+    );
+  }
+  assert.equal(
+    result.targets.get("contributor-fixture-commit-sha-label")?.hidden,
+    true,
+  );
+  for (const pattern of [
+    /data-recorded-proof="operator"/,
+    /data-recorded-proof="contributor"/,
+    /data-recorded-proof="reviewer"/,
+    /0\.5 NEAR/,
+    /Approved alone is not payment\./,
+    /EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2/,
+    /ApRvPUsw2d5gn3N4SxTe7Wbv7nPcJRDTtWc7j9LwAoP7/,
+    /09936627004b6e19664173302ff9d52613f5febef27ab34cfa488b54b83d71b8/,
+  ])
+    assert.match(html, pattern);
+  for (const summary of html.matchAll(/<summary[^>]*>([\s\S]*?)<\/summary>/g)) {
+    assert(
+      summary[1].replace(/<[^>]*>/g, "").length > 20,
+      "summary must name the hidden evidence",
+    );
+  }
+  console.log(
+    `STATIC_HTML_ELEMENTS=${result.elements}; DEFAULT_DISCLOSURE_ELEMENTS=${result.defaultElements}; CLOSED_DETAILS=${result.disclosures}; no pixel/layout claim`,
+  );
+});
+
+function luminance(hex) {
+  const channels = hex
+    .match(/[a-f0-9]{2}/gi)
+    .map((value) => Number.parseInt(value, 16) / 255);
+  const linear = channels.map((value) =>
+    value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
+  );
+  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+}
+
+test("tour palette contrast and compact touch/focus rules are retained", async () => {
+  const styles = await readFile(stylesPath, "utf8");
+  for (const [foreground, background, minimum] of [
+    ["#1d1d1f", "#f5f5f7", 4.5],
+    ["#6e6e73", "#f5f5f7", 4.5],
+    ["#424245", "#ffffff", 4.5],
+    ["#0066cc", "#f5f5f7", 4.5],
+    ["#ffffff", "#0071e3", 4.5],
+    ["#a1a1a6", "#1d1d1f", 4.5],
+    ["#a1a1a6", "#2d2d2d", 4.5],
+    ["#2997ff", "#1d1d1f", 4.5],
+    ["#ff453a", "#1d1d1f", 4.5],
+    ["#8a4b00", "#fff3e1", 4.5],
+    ...["#2997ff", "#7a5cff", "#bf5af2", "#ff375f", "#ff9f0a"].map((stop) => [
+      stop,
+      "#000000",
+      3,
+    ]),
+  ]) {
+    assert(styles.includes(foreground) && styles.includes(background));
+    const values = [luminance(foreground), luminance(background)].sort(
+      (a, b) => b - a,
+    );
+    assert(
+      (values[0] + 0.05) / (values[1] + 0.05) >= minimum,
+      `${foreground}/${background}`,
+    );
+  }
+  assert.match(styles, /summary:focus-visible/);
+  assert.match(styles, /\.github-link \{[^}]*width: 44px;[^}]*height: 44px/s);
+  assert.match(styles, /\.proof-details > summary \{[^}]*min-height: 44px/s);
+  assert.equal((styles.match(/@media \(max-width: 760px\)/g) ?? []).length, 1);
+  assert.doesNotMatch(styles, /min-height: (?:38px|clamp\(560px)/);
+  assert.match(styles, /scroll-snap-type: x mandatory/);
+});

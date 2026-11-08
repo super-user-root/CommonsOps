@@ -1,11 +1,19 @@
 # P4-T02 — Findings resolution record and clean-clone reproducibility
 
-This page is the public resolution record for the independent security review of
-the integrated CommonsOps system (reviewed head `4145546f…`, private report
-`.commonsops/reviews/P4-T01-security-review.md`, coordinator waivers in
-`decisions/P4-T01-security-waivers.md`). It also records the fresh clean-clone
-reproducibility proof and the secret/config/dependency audit performed for
-P4-T02.
+This is the **dated 2026-11-05/06** public disposition summary of an independent
+agent-context review of the integrated CommonsOps system at
+`4145546fa4181b2e08c29fa78056bb266a5501cb`. Review topics included contract
+initialization/authorization, claim/evidence immutability, proposal/receipt reuse,
+causal payout attribution, local-store integrity and dependency/configuration
+checks. Implementation and review used separate agent contexts; this is not an
+external audit-firm certificate, a claim of independent human authorship, or a
+current whole-repository security endorsement. Public rationale and reproducible
+source/fixture checks are given below; inaccessible private reports are not proof.
+
+Historical counts, commands and results below apply only to those measured
+heads/environments. For current setup/gates see [COMMANDS](COMMANDS.md). The later
+Windows runner repair and Linux-versus-Windows artifact mismatch are described
+in §4 and the artifact section; neither changes the recorded evidence pins.
 
 - Task: P4-T02 v1 ("Resolve findings and prove clean-clone reproducibility")
 - Base: `5a2c7bf545464e537a51b61ad12e229945177220` (current `main` at task time)
@@ -23,7 +31,7 @@ P4-T02.
 | --- | ---------------------------- | ------------------------------------------ | -------------------------------------------- |
 | F1  | Medium (waive-with-decision) | WAIVED — accepted design                   | Condition discharged; no code change         |
 | F2  | Medium (waive-with-decision) | WAIVED — accepted design                   | Advisory wording note added to public docs   |
-| F3  | Low (waived by design)       | WAIVED — ADR §10.6 boundary                | None                                         |
+| F3  | Low (waived by design)       | WAIVED — scoped read-model boundary        | None                                         |
 | F4  | Low (waive-with-decision)    | WAIVED — accepted design                   | None                                         |
 | F5  | Low                          | ACCEPTED BEHAVIOR (fail-closed)            | None                                         |
 | F6  | Observation                  | DEFERRED BY DESIGN (MVP scope)             | Post-hackathon note recorded here            |
@@ -31,17 +39,18 @@ P4-T02.
 | F8  | Observation                  | DOCUMENT — contract unchanged              | Docs note added (this page)                  |
 | F9  | Observation                  | DOCUMENT — artifact pins dominate          | None (already documented)                    |
 | F10 | Observation                  | RECORDED — `pnpm audit` clean              | Result recorded here; CI step post-hackathon |
-| F11 | Observation                  | ACCEPTED — ADR §9 retention                | None                                         |
-| F12 | Observation                  | ACCEPTED — ADR §6 semantics                | None                                         |
+| F11 | Observation                  | ACCEPTED — storage retention               | None                                         |
+| F12 | Observation                  | ACCEPTED — pause semantics                 | None                                         |
 
-**No release blockers remain.** F1-F4 are waived by the recorded coordinator
-decision (`decisions/P4-T01-security-waivers.md`); F5-F12 are accepted-design,
-documentation, or deliberate-scope items as detailed below. The review found
-zero Critical and zero High findings.
+**Historical disposition only:** no release blocker was retained by that bounded
+review, which reported zero Critical/High findings. F1–F4 were accepted trade-offs;
+F5–F12 were accepted behavior, documentation or scope items. The public rationale
+below explains each limitation; it is not a promise of no vulnerabilities in later
+code. Current suite results and release checks must be assessed at their own heads.
 
 ### F1 — governance-status blindness (Medium) — WAIVED, condition discharged
 
-Waived as accepted design by the coordinator decision: a status gate on
+Accepted with an explicit trust boundary: a status gate on
 caller-supplied proposal views would be bypassable, and the reconciliation
 predicate enforces the money properties (recipient, exact integer amount,
 causality, finality, success) directly on the receipt graph. The carried-forward
@@ -58,8 +67,7 @@ live chain data with the read-only `node scripts/reconcile-live.mjs`.
 
 ### F2 — fingerprint is integrity-only, not authenticity (Medium) — WAIVED
 
-Waived as accepted design: ADR §10 (the local read-model persistence paragraph,
-cited as "§10.6" in the waiver decision) defines the local store as an advisory,
+Accepted design: the local read-model store is an advisory,
 deterministically rebuildable cache; onchain proposal links remain the global
 authority and no funds or custody flow through the store. The forgery probe
 (probe P3) proved a consistent snapshot can be imported — that is the documented
@@ -69,7 +77,7 @@ P5-T05 documentation task must preserve it.
 
 ### F3 — per-instance payout-receipt uniqueness (Low) — WAIVED
 
-Waived per the ADR §10 read-model boundary: payout-receipt uniqueness
+Accepted read-model boundary: payout-receipt uniqueness
 `(network, payout_receipt_id) -> cycle` is enforced within one canonical local
 store instance; global uniqueness is not claimed for a local read model. The
 onchain `(network, dao, proposal_id)` map is the global authority and is
@@ -77,11 +85,15 @@ one-time onchain. No action.
 
 ### F4 — single-request no-proposal-re-read replay (Low) — WAIVED
 
-Waived per the accepted P3-T03 design: the receipt graph is the
-cryptographically anchored input; the money properties survived every adversarial
-probe. The proposal-kind attribution limitation is documented in code
-(`packages/near/src/reconciliation.ts:1210-1214`). A chain-read proposal
-cross-check remains possible as a future ADR if wanted. No action.
+Accepted historical single-request design: the receipt graph is the
+source graph supplied from RPC is not a client-trusted payment flag, but still
+has an RPC/verified-adapter trust boundary. The historical adversarial
+probes targeted these money properties. The proposal-kind attribution limitation
+is documented alongside `reconcilePayment` in
+[`packages/near/src/reconciliation.ts`](../packages/near/src/reconciliation.ts).
+A current registry/proposal cross-check is not performed by the fixed historical
+script. Do not interpret this accepted limitation as generalized autonomous
+reconciliation or a trustless light-client proof.
 
 ### F5 — U64 proposal ids above 2^53-1 (Low) — ACCEPTED BEHAVIOR
 
@@ -91,8 +103,8 @@ reviewer already short-circuits with an explicit reason. No action.
 
 ### F6 — `cancel_cycle` and list views not implemented (Observation) — DEFERRED BY DESIGN
 
-The implemented surface is deliberately smaller than the ADR §7 method table:
-there is no `cancel_cycle` (the `CANCELLED` status is unreachable) and no
+The implemented public surface deliberately has no `cancel_cycle` (the `CANCELLED`
+status is unreachable) and no
 pagination views; the UI operates via direct `get_*` reads. A mistaken
 OPEN/CLAIMED cycle deterministically expires. Smaller surface, no security
 impact. Post-hackathon: reconsider `cancel_cycle` and list views if operator
@@ -112,20 +124,19 @@ Post-hackathon: model callback-failure semantics for the 2.3.1 profile.
 
 ### F8 — stale `foundation_status` wording (Observation) — DOCUMENT (contract unchanged)
 
-`foundation_status()` still returns `"foundation: no business behavior"` while
-the full work-flow lifecycle is implemented. Coordinator disposition: **do not
-change the contract**. The marker means _no funds-custody business behavior_ —
-the contract has no transfer, withdraw, refund, or payout state surface and
-treats deposits purely as bounded storage collateral; it does not mean the
-contract lacks the work-flow logic. The full work-flow business behavior
-(register → claim → evidence → DAO payout → immutable proposal link → PAID
-reconciliation) is exercised end to end by the documented live journey
-(`docs/testnet-journey.md`) and asserted read-only post-deploy by
-`pnpm smoke:testnet`. Changing the returned string would change the onchain code
-hash (deployed code `Avdrs3wmsssxb3nDDAJsMyFqc137NaSSpF4JNuXGP4zP`, transaction
-`DTkNwnhsF73z4umYgSQgauCLdpPzgtnxeuTb7TE5Dd7R`), invalidating the live journey's
-deployed-code evidence and requiring a full redeploy plus re-journey before the
-deadline — rejected.
+`foundation_status()` still returns `"foundation: no business behavior"`. It is
+legacy scaffold text, not a business-state check, a statement that lifecycle
+logic is missing, or a guarantee about custody. The registry retains operator
+storage collateral but never custody of DAO payout funds. Source and tests show
+register/claim/release/submit/link behavior; the [recorded journey](testnet-journey.md)
+separately shows a DAO payout and offchain attribution.
+
+The literal is preserved to avoid changing the historical deployed-code identity
+(SHA-256 `9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c`,
+code `Avdrs3wmsssxb3nDDAJsMyFqc137NaSSpF4JNuXGP4zP`, transaction
+`DTkNwnhsF73z4umYgSQgauCLdpPzgtnxeuTb7TE5Dd7R`). That preservation is not an
+interpretation of the marker as a security property. Current historical smoke
+verifies exact code/receipts at the pinned block, not only this string.
 
 ### F9 — `sourceHead` vs `reviewedSourceHead` (Observation) — DOCUMENT
 
@@ -148,16 +159,18 @@ current CI is deliberately read-only and offline-hermetic.
 
 ### F11 — excess storage deposit retained (Observation) — ACCEPTED
 
-Per ADR §9 ("Storage policy — bounded operator-funded retention"), attached
+The bounded operator-funded retention policy keeps attached
 storage deposits are collateral retained by the contract with no refund path;
 reserves (4,096/template, 16,384/cycle) far exceed measured usage. The UI
 enforces the minimum. Operator-error-only impact. No action.
 
 ### F12 — claim allowed on paused template's existing cycles (Observation) — ACCEPTED
 
-Per ADR §6: "Pausing stops future cycle materialization but does not cancel
-existing work." Existing cycles of a paused template remain claimable
-(probe R2 confirmed). Documented semantics, deliberate. No action.
+Contract pause semantics stop future materialization without cancelling existing
+work. Existing cycles of a paused template remain claimable at contract level
+when otherwise eligible (historical probe R2). The current browser deliberately
+does not read paused cycles or offer their actions; that UI limit is not a change
+to contract semantics.
 
 ## 2. Fresh clean-clone reproducibility proof
 
@@ -186,11 +199,19 @@ the production HTTP smoke (testnet workspace, disabled wallet, metadata, 404).
 A second independent clone under a long Windows temp path
 (`p4t02-clone-20261106T054351`) reproduced clone (2.4s) and install (44.2s cold
 store, 29 packages downloaded) and failed only at the Prettier lint step — see
-§4 for the measured, environment-only cause. All other checks of that clone were
+§4 for the original harness defect and later repair. All other checks of that clone were
 not reached because the lint step aborted; the short-path clone above is the
-authoritative end-to-end proof.
+dated successful end-to-end measurement, not a universal short-path guarantee.
 
-### Release WASM three-way byte-identity
+### Historical Windows release WASM three-way byte-identity
+
+This table is the measured original Windows toolchain result, not a promise of
+cross-platform reproducibility. Linux Verify later produced 261,082 bytes,
+SHA-256 `17266c2ad8f0da768dc8716730cf3ef70157ebe8fe62973d6259e195856300c7`,
+which differs from the exact deployed artifact below. The cause and behavioral
+equivalence are not established. Current tests distinguish fresh structural/API
+build checks from the immutable deployed fixture; production pins are unchanged.
+See [COMMANDS](COMMANDS.md#fresh-build-versus-immutable-deployed-wasm).
 
 | Artifact                                                                                                                           | SHA-256                                                            | Bytes   |
 | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------- |
@@ -198,7 +219,7 @@ authoritative end-to-end proof.
 | Fresh clone build (`pnpm verify:offline` → `cargo build --locked --offline --target wasm32-unknown-unknown --release`)             | `9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c` | 261,226 |
 | Worktree build (same command)                                                                                                      | `9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c` | 261,226 |
 
-All three are byte-identical (`cmp` of the two local builds: identical). The
+All three were byte-identical in that Windows measurement (`cmp` of the two local builds: identical). The
 worktree's own `pnpm install --frozen-lockfile` (8.2s) and
 `pnpm verify:offline` (2m 52s, exit 0) also passed at the task head, proving the
 worktree itself still satisfies the required checks.
@@ -256,24 +277,25 @@ credentials, no suspicious dependencies.**
   this host and was therefore not run (recorded honestly; covered by the
   post-hackathon CI item).
 
-## 4. New observation — Windows command-line length sensitivity of the lint step
+## 4. Historical Windows lint command-length defect — repaired 2026-11-08
 
-**P4-T02-V1 (Observation, verification harness, Windows-only; no product
-impact; not a release blocker).** `tests/run.mjs` `lint()` invokes
-`pnpm exec prettier --check` with the absolute paths of all 78 tracked source
-files on one command line. On Windows the prettier shim chain (pnpm →
-`prettier.cmd` → cmd.exe) hits the cmd.exe 8191-character command-line limit
-once the checkout directory is deep: measured, the full 78-file list with a
-deep TEMP clone as the checkout root builds a 7,416-character argument string
-and fails with "The command line is too long.", while 65 files (6,617
-characters) pass and the identical full list with a short checkout root as the
-working directory (5,640-character argument string) passes. Cloning to a short
-path (as the §2 proof does, from the same `TEMP` root) avoids it entirely.
+The original P4-T02-V1 observation concerned `pnpm exec prettier --check` with
+all absolute filenames in one Windows shim command. At the then-current file
+count, a deep TEMP checkout failed with "The command line is too long." while a
+shorter path passed. The old conclusion that short paths avoided the defect was
+too broad: the 2026-11-08 mock screening reproduced failure even in a short path
+as the source set grew. That was a verification-harness defect, not merely a
+host configuration issue; the original failed run did not execute later phases.
 
-Characterization: environment-only, fail-visible (the harness aborts loudly
-rather than skipping checks), Linux CI is unaffected (no cmd.exe, and GitHub
-runners use short paths), and every current Windows checkout in this project
-uses short paths. Recommended follow-up (post-hackathon, or whenever a task
-legitimately touches `tests/run.mjs`): pass relative paths with the repo root
-as working directory, or hand prettier a directory/glob, so the invocation is
-path-length independent. This task changes no code, per its assignment.
+The P5-T13 repair in public main `9264cf3b14d408dff5d3e71990d9a41934406abd`
+uses the exact pinned installed Prettier JS entry through Node, shell disabled,
+relative filenames and complete bounded batches. Oversized individual arguments
+or any failed batch fail visibly. Source coverage and other phases are preserved.
+Ordinary `pnpm verify:offline` was verified on native Windows normal and
+long/spaced paths without drive mappings, and Linux Verify/Pages passed. The
+[runner regressions](../tests/run.test.mjs) and [current command reference](COMMANDS.md)
+are reproducible public evidence; current reproduction still needs the pinned
+toolchain and populated dependency caches.
+
+This addendum supersedes the old short-path workaround/deferral, not the dated
+2026-11-05 results, artifact hashes or prior failure evidence above.

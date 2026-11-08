@@ -10,6 +10,14 @@ identifier is public onchain data; no keys or personal data appear here.
 - Sputnik DAO: `commonsops-dao.sputnikv2.testnet` (factory `sputnikv2.testnet`, version `2.3.1`, code hash `AA4nA45vauiac3jdVwJTzSdUP3oj2r1fDaPAb2mHdgcH`)
 - Roles: `commonsops.testnet` acted as registry manager, contributor (claimant = payout recipient), and DAO council — the MVP demo arrangement
 
+This is a historical record, not a current live-slot or provider-availability
+claim. Evidence identifies a public PR and SHA; it does not automatically verify
+authorship, merge status, commit membership or work quality. Public security-fix
+PRs are supported only after coordinated disclosure, not confidential-report
+intake. The DAO retains payout funds; registry deposits are retained storage
+collateral. The deployed artifact is exact; [release verification](release-verification.md)
+separates historical Windows byte equality from differing Linux local builds.
+
 ## 1. Registry deployment
 
 Atomic DeployContract + `new` signed by the contract account.
@@ -59,6 +67,10 @@ Atomic DeployContract + `new` signed by the contract account.
 - Proposal `0`: native Transfer of exactly `500000000000000000000000` yoctoNEAR (0.5 NEAR) to `commonsops.testnet`, `msg: null`
 - Policy: council = `commonsops.testnet` (1/1 threshold), proposal bond `0`
 
+The public unsigned proposal builder supports the pinned Sputnik 2.0.0 request
+profile, not this 2.3.1 DAO. The recorded `add_proposal` was an external DAO
+handoff. The payout verifier separately supports this observed 2.3.1 profile.
+
 ## 7. Council approval executes the payout
 
 `act_proposal VoteApprove` — transaction
@@ -83,13 +95,14 @@ Atomic DeployContract + `new` signed by the contract account.
 
 ## 9. Reconciliation — PAID derived from chain data
 
-`scripts/reconcile-live.mjs` runs the merged reconciliation read model
-(`packages/near`) against the live RPC with the registry-linked expectations
-and the candidate transaction hash. It issues one read-only
-`EXPERIMENTAL_tx_status` call, requires finality, verifies the exact act
-proposal and the causal payout receipt (predecessor, recipient, integer
-amount, `SuccessValue`), and applies the verified attribution to the
-fingerprinted store.
+`scripts/reconcile-live.mjs` runs the production reconciliation read model
+(`packages/near`) against a historical RPC response, using the fixed recorded
+registry-linked expectations and candidate transaction below. It does not query
+current registry linkage or discover new payouts. One logical read-only
+`EXPERIMENTAL_tx_status` lookup has bounded primary/archival attempts. The adapter
+requires finality, exact act-proposal identity and the causal payout receipt
+(predecessor, recipient, integer amount, `SuccessValue`), then applies verified
+attribution to the fingerprinted store.
 
 - Result: `APPLIED`, adapter state **`PAID`** — "verified attribution recorded"
 - Payout receipt: `EnL1wpFNdEsrvJtEP3Uh7cn9CsFpYTmwSX3HDyzYquW2`
@@ -107,68 +120,109 @@ receipt graph above and the one-time onchain proposal link.
 
 ## Reproduce
 
-```bash
-node scripts/reconcile-live.mjs
+```text
+node scripts/reconcile-live.mjs --stdout-only
+node scripts/smoke-testnet.mjs commonsops.testnet --stdout-only
+node --test tests/e2e/e2e-replay.test.ts
 ```
 
-Read-only: the script signs nothing and spends nothing. Each run re-derives
-the attribution from the live chain: `APPLIED`/`PAID` with the same record and
-an unchanged store fingerprint (`IDEMPOTENT` is the store-level status for
-re-applying an identical record within one store instance).
+Read-only: the historical scripts sign nothing, spend nothing and, with
+`--stdout-only`, write no artifacts. Successful re-derivation returns
+`APPLIED`/`PAID` and the unchanged record fingerprint; `IDEMPOTENT` is the
+store-level result for applying the identical record again in one store instance.
+Actual attempt endpoints/timings are outer `runProvenance`, separate from the
+immutable evidence source. A failed check exits 1 with `FAILED` JSON on stderr;
+recorded proof is never substituted for a failed live read. The final command is
+fully offline and repeatable. [Setup, deadlines and output semantics](COMMANDS.md).
 
-## The workspace live surface (P5-T11)
+## The workspace live surface
 
-The web workspace (`apps/web`) now has a live section alongside the recorded
-journey stages:
+Hosted at <https://super-user-root.github.io/CommonsOps/>:
 
-- **Live reads (no wallet needed):** the browser performs read-only JSON-RPC
-  `query` calls to `https://rpc.testnet.near.org` at final blocks, enumerates
-  every registered template (sequential ids until the registry returns none,
-  capped at 16), and renders each active template with its latest existing
-  cycle and its next period — plus `foundation_status`. Every read failure is
-  shown as a named error (per template, not a global failure); no fallback
-  data is invented.
-- **Wallet-signed contributor transactions:** with a testnet wallet connected
-  (official `@near-wallet-selector` 10.1.4: MyNearWallet, Meteor, Here), the
-  reviewed intent construction (`claim_cycle`, `submit_evidence`,
-  `release_claim`, `expire_cycle_or_claim`) becomes sendable per active
-  template against that template's newest live cycle — zero attached deposit
-  and 100 TGas prepaid gas, the exact wire values of the recorded journey
-  above. Submitted transactions link to
-  `https://explorer.testnet.near.org/transactions/<hash>`, and a wallet
-  dismissal is reported honestly as "no request sent".
-- **Still out of the app:** operator (manager) methods stay display-only in
-  the UI, no private keys exist in app code, mainnet is refused in code, and
-  the DAO payout flow remains inside the DAO's own governance — the app never
-  simulates a payout.
+- **Live reads:** no wallet needed. Each refresh pins all views to one final
+  block, using bounded official primary/archival RPC. Templates are discovered in
+  order up to 16, with named per-template errors or a finite infrastructure
+  error/Retry. Prior data is labelled stale and cannot authorize signing. The
+  unavailable card links explicitly to recorded proof, not a fabricated live result.
+- **Selected template:** compact summaries use `deriveContributorCycleView`, not
+  status-only OPEN assertions. Prefer the connected active claimant, otherwise a
+  supported open/in-window cycle, otherwise the first summary. Each group remains
+  discoverable; only selected detail/actions expand. Selection/hiding, account,
+  evidence or snapshot changes invalidate pending preparation before signing.
+- **Wallet-signed contributor actions:** official wallet selector 10.1.4
+  (MyNearWallet, Meteor, Here), reviewed `claim_cycle`, `submit_evidence`,
+  `release_claim`, `expire_cycle_or_claim` construction, zero attached deposit and
+  100 TGas prepaid. Gas still costs testnet NEAR. Last-await checks bind the
+  current signer. Wallet-reported transaction hashes survive refresh/selection,
+  but do not certify execution success or payment.
+- **External handoffs:** operator provisioning/linking stays display-only; DAO
+  review/governance/payout remains in the DAO. No keys in app code. Mainnet is
+  refused and requires code/configuration/operational validation.
+- **Legacy marker:** `foundation_status` is the scaffold literal
+  `foundation: no business behavior`, not evidence of missing lifecycle code,
+  a no-custody guarantee or a business-state check.
 
-## 11. Judge demo cycle — template 2 opened (operator action, 2026-11-08)
+## Shared demo slot
 
-After the live workspace shipped, the operator keychain-signed two more
-transactions so hackathon judges can claim a cycle interactively:
+### Historical provisioning — 2026-11-08
 
-1. `create_template` — template 2 "Judge demo - claim a live work cycle":
-   DAO `commonsops-dao.sputnikv2.testnet`, start = 2026-11-07T21:05:40Z
-   (immediately due), interval/work window/claim duration 14 days each,
-   payout 0.5 NEAR, storage deposit 0.04096 NEAR.
-2. `materialize_cycle {template_id: "2"}` — cycle **2:0 OPEN**
-   (storage deposit 0.16384 NEAR), emitting
-   `EVENT_JSON ... "event":"cycle_opened"` with
-   `deadline_at_ns 1795295140385722126` and no claim.
+The operator created template 2, "Judge demo - claim a live work cycle", targeting
+`commonsops-dao.sputnikv2.testnet`, with interval/work window/claim duration of 14
+days each and a 0.5 NEAR proposed payout. Start:
+2026-11-07T21:05:40.385722126Z. Storage deposit: 0.04096 NEAR.
+`materialize_cycle {"template_id":"2"}` then opened cycle 2:0 with a 0.16384 NEAR
+storage deposit and recorded deadline `1795295140385722126` ns
+(2026-11-21T21:05:40.385722126Z). OPEN/no claim describes that historical observation.
 
-Both were signed with the operator keychain via near-cli 0.30.1; the
-transaction hashes are not listed by the public indexer for these calls,
-but the resulting onchain state is verifiable by anyone with read-only
-RPC, and the exact near-cli invocations are reproduced in the task
-handoff record (`.commonsops/handoffs/P5-T11.md`, followup section).
-Verification:
+The provisioning transaction hashes were not captured in this public record;
+there is no explorer transaction proof for those two invocations here. Current
+public `get_template`/`get_cycle` reads can verify resulting state, not reconstruct
+uncaptured transaction provenance. No private record is needed to interpret the
+public payloads below, and no new provisioning is part of this tour.
+
+### Current availability and release limits
+
+**2:0 is one global shared slot, not one per visitor.** Availability is only at
+the last verified block; the first claimant occupies it. A claimant may release
+only their active **unsubmitted** claim. Evidence submission is immutable and
+prevents release; an elapsed claim/work deadline may require settlement instead.
+There is no automatic reset and no guaranteed DAO payout. Recorded proof and
+`node --test tests/e2e/e2e-replay.test.ts` remain repeatable for all subsequent
+visitors without an available cycle, wallet or live RPC.
+
+### Bounded read-only view
+
+Requires Node 24 + curl and this checkout. Git Bash/POSIX example; use `curl.exe`
+and PowerShell quoting in PowerShell. The checked helper decodes the RPC
+`result.result` UTF-8 byte array into JSON (object/string/null), rejects errors,
+invalid bytes/UTF-8/JSON and exits nonzero. A raw byte array is not a decoded cycle.
 
 ```sh
-curl -sS -X POST https://rpc.testnet.near.org -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":"t","method":"query","params":{"request_type":"call_function","account_id":"commonsops.testnet","method_name":"get_cycle","args_base64":"eyJ0ZW1wbGF0ZV9pZCI6IjIiLCJwZXJpb2RfaW5kZXgiOiIwIn0=","finality":"final"}}'
-# -> cycle 2:0, status OPEN, claim: null
+set -o pipefail
+curl --fail-with-body --silent --show-error --connect-timeout 5 --max-time 15 https://rpc.testnet.near.org -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"cycle","method":"query","params":{"request_type":"call_function","account_id":"commonsops.testnet","method_name":"get_cycle","args_base64":"eyJjeWNsZV9rZXkiOnsidGVtcGxhdGVfaWQiOiIyIiwicGVyaW9kX2luZGV4IjoiMCJ9fQ==","finality":"final"}}' | node tests/decode-rpc-view.ts
 ```
 
-Judges connect a testnet wallet in the live workspace and the contributor
-actions bind to this open cycle; claiming is a real onchain transaction
-signed by the judge's own wallet.
+Decoded arguments must be nested:
+`{"cycle_key":{"template_id":"2","period_index":"0"}}`. `null` means no record;
+OPEN alone is insufficient without checking the work window at the observed
+block. Use the website's validated summary rather than assuming availability.
+
+### Unsigned claim/release examples — not signing instructions
+
+Optional near-cli-rs 0.30.1, Git Bash/POSIX. Assign your own account locally, read
+the current state, then inspect an unsigned intent if needed. **These end in
+`sign-later`; they do not sign or broadcast.** No keychain/send command is part of
+this guide. Any eventual signature/spend needs a separate explicit human decision.
+
+```sh
+CLAIMANT_ACCOUNT='replace-with-your-account.testnet'
+near contract call-function as-transaction commonsops.testnet claim_cycle json-args '{"cycle_key":{"template_id":"2","period_index":"0"}}' prepaid-gas '100 TGas' attached-deposit '0 NEAR' sign-as "$CLAIMANT_ACCOUNT" network-config testnet sign-later
+near contract call-function as-transaction commonsops.testnet release_claim json-args '{"cycle_key":{"template_id":"2","period_index":"0"}}' prepaid-gas '100 TGas' attached-deposit '0 NEAR' sign-as "$CLAIMANT_ACCOUNT" network-config testnet sign-later
+```
+
+Claim binds your account as claimant **and** recipient. Release clears both, only
+before submission and within the active claim/work window. The live website can
+prepare evidence submission with field validation and an immutable-submission
+warning. Do not submit a dummy PR merely to test the slot. All executed
+contributor methods consume gas even with zero attached deposit; the signer must
+review the exact network, receiver, method, arguments and 100 TGas allowance.

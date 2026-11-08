@@ -79,37 +79,37 @@ establish cross-host byte identity. The cause of the binary difference and
 behavioral equivalence are not established here. Production artifact pins,
 manifest, receipts and code verification are not relaxed to accept that digest.
 
-## Prepare a testnet deployment without signing
+## Prepare a testnet deployment without signing — operator-only reference
 
-Build and verify the reviewed artifact first. Then use an actual existing named testnet account supplied by the human. The preparer checks the current checkout and artifact against the accepted source/hash/size, queries only public account/key/block state, and writes ignored unsigned provenance.
+This is not needed for the hosted demo or judge verification. Deployment remains
+a separately authorized operator action. The preparer enforces exact source and
+artifact pins; a structurally valid but different host build is not accepted.
+Before an operator invokes it, provide a real reviewed source head and account
+locally. The following are **argument templates, not a judge-tour command**.
 
 Git Bash/POSIX:
 
-```text
-export COMMONSOPS_SOURCE_HEAD=<reviewed-full-sha>
-pnpm build:contract
-node --test scripts/deployment-lib.test.mjs
-node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
+```sh
+export COMMONSOPS_SOURCE_HEAD='replace-with-reviewed-full-sha'
+CONTRACT_ACCOUNT='replace-with-contract-account.testnet'
+node scripts/prepare-testnet-deployment.mjs "$CONTRACT_ACCOUNT"
 ```
 
 PowerShell:
 
-```text
-$env:COMMONSOPS_SOURCE_HEAD = '<reviewed-full-sha>'
-pnpm build:contract
-node --test scripts/deployment-lib.test.mjs
-node scripts/prepare-testnet-deployment.mjs <contract-account.testnet> [manager-account.testnet]
+```powershell
+$env:COMMONSOPS_SOURCE_HEAD = 'replace-with-reviewed-full-sha'
+$ContractAccount = 'replace-with-contract-account.testnet'
+node scripts/prepare-testnet-deployment.mjs $ContractAccount
 ```
 
-The preparer verifies the reviewed source SHA and WASM hash/size, writes an ignored content-addressed artifact, and outputs shell-specific `near ... sign-later` commands for one atomic `DeployContract` + `FunctionCall:new` transaction with 50 Tgas and 0 NEAR attached to initialization. It does not sign or broadcast. Do not commit the generated manifest, artifact copy, or unsigned transaction.
-
-After a human explicitly authorizes and signs/broadcasts that exact transaction, fill the public non-secret transaction/receipt/code-hash provenance and run:
-
-```text
-pnpm smoke:testnet -- <contract-account.testnet>
-```
-
-This satisfies the frozen `pnpm smoke:testnet` required check through the accepted narrow `package.json` scope exception. The smoke command is read-only RPC verification, not deployment authorization.
+The preparer only reads public account/key/block state and writes ignored unsigned
+provenance if its checks pass. Its `near ... sign-later` output describes atomic
+DeployContract + FunctionCall:new, 50 TGas and zero deposit on initialization;
+preparation does not authorize signing or broadcasting. Never commit generated
+unsigned transactions. No deployment or state-changing command is part of the
+read-only verification route below. For the existing deployment, use its fixed
+historical smoke command rather than provisioning another account.
 
 ## Historical read-only verification (no wallet or artifact writes)
 
@@ -189,6 +189,33 @@ node --test scripts/deployment-lib.test.mjs scripts/historical-reads.test.mjs
 
 These runner/transport/script regressions also run in `pnpm verify:offline`.
 
+Current web and test-package gates additionally cover selection/hiding authority,
+shared-slot time/claim/submission semantics, the checked CLI decoder and public
+link/ABI/index consistency. No total count is maintained here; inspect suite
+output for the actual head. Replay remains the explicit command above.
+
+## Checked current-view decoding
+
+Requires Node 24 and curl (PowerShell: `curl.exe`) plus this checkout. The examples
+in [README](../README.md#read-only-current-view-with-a-checked-decoder) and
+[testnet journey](testnet-journey.md#bounded-read-only-view) use finite curl
+connect/max timeouts and pipe the response into `node tests/decode-rpc-view.ts`.
+NEAR's outer `result.result` is a UTF-8 byte array. The helper uses the existing
+bounded, duplicate-safe RPC envelope parser and fatal UTF-8 result decoder; it
+prints decoded JSON objects, strings or null, rejects RPC errors/invalid bytes/
+invalid UTF-8/invalid JSON, and exits 1 with FAILED JSON on stderr. No network
+request or chain mutation is made by the decoder. Set `pipefail` in Git Bash/POSIX
+so curl failures cannot be hidden by a pipeline's last exit code.
+
+`get_cycle` arguments are nested `cycle_key` (template_id and period_index decimal
+strings), not flattened IDs. A returned OPEN literal is not an in-window or
+current-slot promise; use the app's canonical block-time derivation. Unsigned
+claim/release examples use a quoted assigned account placeholder and `sign-later`;
+never paste shell angle-bracket account tokens or replace that with signing as
+part of verification. All executed contributor actions cost gas despite zero
+deposit. Syntax checking is limited to `--help`/argument parsing, never executing
+the claim/release/submit examples.
+
 ## View the workspace
 
 ```text
@@ -204,7 +231,14 @@ pnpm build
 pnpm start
 ```
 
-Open the same loopback URL — see the same recorded journey in production mode, plus the live registry section: read-only testnet RPC reads run in the browser, and connecting a testnet wallet enables wallet-signed contributor transactions. The recorded stages stay immutable imported onchain data; the DAO payout flow stays out of the app. No secret environment defaults exist. `NEXT_TELEMETRY_DISABLED=1` is supplied by the verification runner/CI, not a credential. No deployment commands are provided.
+Open the same loopback URL — see the recorded journey in production mode, with
+initially-closed native proof disclosures and a separate live registry section.
+Read-only testnet RPC runs in the browser; connecting a wallet allows eligible
+contributor actions. Operator and DAO governance/payout stay outside the app.
+No secret environment defaults exist. `NEXT_TELEMETRY_DISABLED=1` is build/test
+plumbing, not a credential. `foundation_status` is a legacy scaffold literal,
+not proof of missing business logic or a custody guarantee. The app refuses
+mainnet; migration requires code/configuration/operational validation.
 
 ### Browser snapshot and recovery checks (no signing)
 
@@ -230,12 +264,19 @@ DOM test harness: source-wiring checks supplement controller tests, not a full
 rendering test. Browser verification must separately check `#live-registry`:
 Reading disabled; bounded success or one infrastructure alert/Retry; prior data
 marked stale and non-sendable; template-specific errors never imply absent
-cycles; transaction evidence survives refresh. The state-pattern gallery's
-ERROR alert is an intentional example outside this region. Scope header wallet
-checks to `#wallet-connect-button`; the library selector overlay may not expose
-`role=dialog`. Do not select/sign a wallet transaction for a no-signing check.
-Recorded-preview reasons refer only to those unsigned panels, not a globally
-unavailable wallet. These are testing instructions, not a claim they ran.
+cycles; transaction evidence survives refresh/selection/hiding. The state-pattern
+gallery's ERROR is an intentional example outside this region and behind a native
+disclosure. Scope header wallet checks to `#wallet-connect-button`. The official
+selector has no supported ARIA/focus options in 10.1.4; a small adapter observes
+only its owned `#near-wallet-selector-modal` root, names the dialog and close button,
+places/traps focus, and restores the opener after the library removes its delayed
+close transition. It uses the library onHide lifecycle, disconnects observers and
+listeners on cleanup, and leaves Escape to the official chooser. Tests use owned-root
+stubs, not a mounted DOM harness. Verify no-provider opening/Tab/Shift+Tab/close/
+delayed Escape and restoration separately in the official browser. Do not select,
+connect or sign a wallet for a no-signing check. Native recorded disclosures must
+work with keyboard and without JavaScript; their full SHA/ARIA proof remains in
+HTML. These are testing instructions, not a claim they ran on the current head.
 
 ## CI
 
@@ -249,17 +290,23 @@ server-rendered; export mode only activates when the build environment sets
 `COMMONSOPS_STATIC_EXPORT=1`, which adds `output: "export"`, the
 `/CommonsOps` base path, and trailing slashes. Local check:
 
-```text
+```sh
 COMMONSOPS_STATIC_EXPORT=1 pnpm --filter @commonsops/web exec next build
+node --test tests/static-export.test.mjs
 ```
 
-See `apps/web/out/` — pre-rendered HTML with `/CommonsOps/`-prefixed assets.
-`.github/workflows/pages.yaml` runs this export build on every push to
-`main` (and on manual `workflow_dispatch` runs) so Pages compatibility is
-verified continuously. Publishing is gated on the `ENABLE_PAGES` repository
-variable: after enabling Pages (Settings → Pages → Source: GitHub Actions)
-and setting `ENABLE_PAGES=true`, the next push to `main` — or a manual
-workflow run — uploads the artifact and deploys to
-`https://<owner>.github.io/CommonsOps/`. The workflow has no secrets beyond
-the built-in `GITHUB_TOKEN`, which the deploy job scopes to `pages: write`
-and `id-token: write`.
+Run this **after** default production tests finish, not concurrently with a
+normal build. Both modes use `apps/web/.next`; rebuild default before `pnpm start`.
+The one canonical repository `llms.txt` is read at build time by the forced-static
+GET route (`apps/web/app/llms.txt/route.ts`). The footer uses the current base path.
+Normal production HTTP checks assert `/llms.txt` bytes and `text/plain` content type;
+the static check asserts `apps/web/out/llms.txt` byte equality, the exported footer
+link and preserved recorded proof. No copied `public/llms.txt` is maintained.
+
+Pages is hosted at <https://super-user-root.github.io/CommonsOps/> and its index at
+<https://super-user-root.github.io/CommonsOps/llms.txt>. The Pages workflow asserts
+export/index equality immediately after `next build`. Publishing is gated by
+`ENABLE_PAGES=true`; upload/deploy use built-in GITHUB_TOKEN permissions, with
+`pages: write` and `id-token: write` only in the deploy job. A local export pass
+is not evidence that a new head was published; deployed content must be verified
+separately after release. No hosting uptime promise is implied.

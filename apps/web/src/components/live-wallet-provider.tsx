@@ -65,6 +65,8 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const bundleRef = useRef<WalletSelectorBundle | null>(null);
   const initRef = useRef<Promise<WalletSelectorBundle> | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const mountedRef = useRef(true);
   const sendAuthority = useMemo(() => new SendAuthority(), []);
 
   const syncAccounts = useCallback(
@@ -83,19 +85,28 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
       if (!initRef.current) {
         initRef.current = createTestnetWalletSelector(LIVE_NETWORK_ID)
           .then((bundle) => {
+            if (!mountedRef.current) {
+              bundle.chooser.dispose();
+              throw new Error("ERR_WALLET_UNMOUNTED");
+            }
             bundleRef.current = bundle;
             syncAccounts(bundle.selector);
-            bundle.selector.store.observable.subscribe(() => {
-              syncAccounts(bundle.selector);
-            });
+            const subscription = bundle.selector.store.observable.subscribe(
+              () => {
+                syncAccounts(bundle.selector);
+              },
+            );
+            unsubscribeRef.current = () => subscription.unsubscribe();
             setPhase("READY");
             setError(null);
             return bundle;
           })
           .catch((initError) => {
             initRef.current = null;
-            setPhase("ERROR");
-            setError(failureMessage(initError));
+            if (mountedRef.current) {
+              setPhase("ERROR");
+              setError(failureMessage(initError));
+            }
             throw initError;
           });
         setPhase("INITIALIZING");
@@ -104,11 +115,19 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
     }, [syncAccounts]);
 
   const connect = useCallback(async () => {
+    // Save the actual trigger before lazy initialization can move focus to BODY.
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     try {
-      const { modal } = await ensureSelector();
-      modal.show();
-    } catch {
-      /* phase and error already recorded by ensureSelector */
+      const { chooser } = await ensureSelector();
+      if (mountedRef.current) chooser.show(opener);
+    } catch (connectError) {
+      if (mountedRef.current) {
+        setError(failureMessage(connectError));
+        setPhase("ERROR");
+      }
     }
   }, [ensureSelector]);
 
@@ -156,12 +175,17 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       sendAuthority.invalidate();
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = null;
+      bundleRef.current?.chooser.dispose();
       initRef.current = null;
       bundleRef.current = null;
     };
-  }, []);
+  }, [sendAuthority]);
 
   const value = useMemo<LiveWalletContextValue>(
     () => ({

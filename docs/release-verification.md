@@ -1,10 +1,19 @@
-# Release-candidate verification
+# Release-candidate verification — historical record
 
-The live testnet deployment at `commonsops.testnet` **is** the release
-candidate. No contract source changed after the reviewed build: the contract
-tree at the release head is byte-identical to the tree that produced the
-deployed artifact, so instead of redeploying an identical contract, this
-release re-verifies the live deployment against the release head.
+This record covers release head `82e1d68c92cbc3deded140ed924ea15e01e707d1`
+(2026-11-06), not a certification of every later frontend or documentation change.
+At that head, the contract source tree matched the deployed source tree; no
+redeployment was performed. The recorded smoke checked exact deployed artifact
+identity at the historical initialization block, not current provider uptime.
+
+**Byte-equality scope:** clone/worktree/deployed equality was measured with the
+original Windows Rust 1.98.0 toolchain environment. Later Linux Verify produced
+261,082 bytes, SHA-256
+`17266c2ad8f0da768dc8716730cf3ef70157ebe8fe62973d6259e195856300c7`, different from
+the deployed 261,226-byte artifact below. No cross-platform byte identity or
+behavioral equivalence is established. Current local builds are structurally
+checked; historical regressions use the checked immutable deployed fixture.
+[Commands and fixture provenance](COMMANDS.md#fresh-build-versus-immutable-deployed-wasm).
 
 - Release head (this record): `82e1d68c92cbc3deded140ed924ea15e01e707d1`
 - Contract tree at release head: `979db78a521e045676db8dd0564b8d17d24ab8bc`
@@ -23,11 +32,11 @@ release re-verifies the live deployment against the release head.
 - Pre-deployment code hash: `11111111111111111111111111111111` (empty), proving
   the contract was created by the recorded atomic deploy+init transaction
   [`DTkNwnhsF73z4umYgSQgauCLdpPzgtnxeuTb7TE5Dd7R`](https://explorer.testnet.near.org/transactions/DTkNwnhsF73z4umYgSQgauCLdpPzgtnxeuTb7TE5Dd7R).
-- `foundation_status` view: `"foundation: no business behavior"` — the stage
-  marker means the contract holds no funds-custody business behavior; the full
-  work-flow logic it does implement is exercised by the documented
-  [testnet journey](./testnet-journey.md), which reconciled a real DAO payout
-  to PAID from causal chain data.
+- `foundation_status` view: `"foundation: no business behavior"` — an unchanged
+  legacy scaffold literal, not a claim that lifecycle logic is missing, not a
+  business-state check and not a funds-custody guarantee. The registry retains
+  storage collateral but does not custody DAO payout funds. The implemented
+  lifecycle is shown by source/tests and the [recorded journey](testnet-journey.md).
 
 ## Smoke result (re-run at the release head)
 
@@ -61,6 +70,23 @@ The live contract has executed the full documented journey (template, cycle,
 claim, immutable evidence, DAO proposal 0, approval, payout, immutable
 proposal link) plus the end-to-end failure-path demonstrations (duplicate
 claim rejected onchain, proposal reuse rejected onchain) — see
-[testnet-journey.md](./testnet-journey.md). All security-review findings were
-resolved or coordinator-waived with a fresh clean-clone reproduction (see
-[p4-t02-findings.md](./p4-t02-findings.md)); none touched the contract source.
+[testnet-journey.md](./testnet-journey.md). The dated agent-context findings and
+public dispositions are summarized in [p4-t02-findings.md](./p4-t02-findings.md).
+Failed-send hashes were not captured for the duplicate-claim/proposal-reuse
+observations, so those are not independently explorer-verifiable here; the
+public Rust/replay tests provide separate executable guard coverage. This record
+is not an external security-audit certificate or a current release endorsement.
+
+## Current read-only recheck
+
+```text
+node scripts/smoke-testnet.mjs commonsops.testnet --stdout-only
+node scripts/reconcile-live.mjs --stdout-only
+```
+
+Both are bounded, provider-dependent historical checks. They add outer
+`runProvenance` on success without rewriting the historical JSON above; failure
+exits 1 with `FAILED` JSON on stderr. The recorded initialization block/artifact
+identity is distinct from current registry availability. `--stdout-only`
+preserves committed evidence; offline replay is a separate route, not a live
+success fallback.

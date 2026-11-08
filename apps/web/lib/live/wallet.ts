@@ -5,10 +5,16 @@
 // signing happens entirely inside the user's chosen wallet.
 
 import { assertTestnet, type LiveNetworkConfig } from "./network.ts";
+import {
+  accessibleWalletChooser,
+  WALLET_MODAL_ROOT_ID,
+  type WalletChooser,
+} from "./wallet-modal-accessibility.ts";
 
 export interface WalletSelectorBundle {
   readonly selector: import("@near-wallet-selector/core").WalletSelector;
   readonly modal: import("@near-wallet-selector/modal-ui").WalletSelectorModal;
+  readonly chooser: WalletChooser;
 }
 
 export async function createTestnetWalletSelector(
@@ -43,5 +49,11 @@ export async function createTestnetWalletSelector(
     ],
   });
   const modal = modalUi.setupModal(selector, {});
-  return Object.freeze({ selector, modal });
+  const root = document.getElementById(WALLET_MODAL_ROOT_ID);
+  if (!root)
+    throw new Error(
+      "ERR_WALLET_MODAL_ROOT: wallet chooser could not be initialized",
+    );
+  const chooser = accessibleWalletChooser(modal, root);
+  return Object.freeze({ selector, modal, chooser });
 }

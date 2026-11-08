@@ -28,7 +28,13 @@ test("NEAR adapter export enables no network, wallet, reads, or transactions", (
 
 test("shell metadata accurately describes the live testnet workspace", () => {
   assert.equal(siteMetadata.title, "CommonsOps | Testnet workspace");
-  assert.match(siteMetadata.description, /never holds keys or funds/);
+  assert.match(siteMetadata.description, /No keys in app code/);
+  assert.match(siteMetadata.description, /DAO keeps payout funds/);
+  assert.match(siteMetadata.description, /registry retains storage collateral/);
+  assert.match(
+    siteMetadata.description,
+    /No automatic work-quality verification/,
+  );
   assert.equal(siteMetadata.stage, "live testnet workspace");
   assert.equal(siteMetadata.liveData, true);
   assert.equal(siteMetadata.transactions, true);
