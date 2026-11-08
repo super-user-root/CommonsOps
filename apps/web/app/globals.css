@@ -8,6 +8,8 @@
  * verified at >= 4.5:1 (WCAG AA) — see the handoff contrast table. The dark
  * subhead gray #a1a1a6 clears 4.5:1 on #000, #1d1d1f and #2d2d2d, so it is
  * used for normal-size text too (no reliance on the 3:1 large-text rule).
+ * Pill text is #f5f5f7 (not #a1a1a6): through the 8% glass chip it computes
+ * 7.4:1 on the muted card (#2d2d2d) and 9.2:1 on the selected card.
  * Full-bleed section backgrounds use the box-shadow spread technique so the
  * DOM structure (and every ARIA relationship) stays untouched.
  */
@@ -605,7 +607,7 @@ p {
 
 .pill {
   background: rgb(255 255 255 / 8%);
-  color: var(--d-muted);
+  color: var(--d-text);
 }
 
 .section-shell {
@@ -1342,7 +1344,7 @@ footer {
   color: var(--d-text);
 }
 
-.masthead .wordmark {
+.masthead a.wordmark {
   color: var(--d-text);
 }
 
