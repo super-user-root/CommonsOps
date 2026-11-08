@@ -67,9 +67,9 @@ export default async function HomePage() {
             <em>Verify the payout.</em>
           </h1>
           <p className="intro">
-            CommonsOps coordinates recurring public documentation work, freezes
-            contributor evidence on NEAR, and keeps approval and funds inside an
-            existing Sputnik DAO.
+            CommonsOps coordinates recurring public work — documentation,
+            triage, security fixes — freezes contributor evidence on NEAR, and
+            keeps approval and funds inside an existing Sputnik DAO.
           </p>
           <div className="hero-actions">
             <a className="button primary" href="#live-registry">

@@ -30,7 +30,9 @@ evidence for all of it.
 - **Idea.** Make each work cycle a first-class onchain object: one claimant
   bound to the payout recipient, immutable evidence, a one-time link to a
   Sputnik DAO transfer proposal — and a payment state that is _derived_ from
-  the chain, not _assumed_ from a vote.
+  the chain, not _assumed_ from a vote. The registry is work-agnostic: any
+  recurring work verifiable by a public PR + commit fits the same proof
+  rules — documentation, triage, dependency updates, security fixes.
 - **What you will see.** Exactly three observable outcomes:
 
   | Outcome                    | Meaning                                                                                                                                        |
@@ -336,6 +338,15 @@ registry section is separate and labeled live: it performs read-only testnet
 RPC and, when you connect a wallet, sends transactions that your wallet
 signs. The DAO payout flow is not simulated in the app; it is documented and
 re-verifiable in `docs/testnet-journey.md` and the read-only scripts.
+
+**Can it pay open-source contributors or bug fixes, not just docs?**
+Yes — the registry is template-agnostic. Any recurring work verifiable by a
+public PR + commit (triage, dependency updates, security fixes) runs on the
+same proof rules: a DAO defines the program's economics, contributors claim,
+evidence freezes onchain, and the DAO approves any payout. For vulnerability
+reports without a fix PR, mind responsible-disclosure timing: evidence
+hashes are public onchain, so embargoed reports should only be committed
+after the patch ships.
 
 ## Repository layout
 
