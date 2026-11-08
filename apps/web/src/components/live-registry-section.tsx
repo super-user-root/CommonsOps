@@ -37,11 +37,12 @@ import {
   type LiveRegistrySnapshot,
   type LiveTemplateRead,
 } from "../../lib/live/registry-reads.ts";
-import { LiveRpcError } from "../../lib/live/rpc.ts";
+import { LiveRpcError, RPC_LIMITS } from "../../lib/live/rpc.ts";
 import {
   describeLiveRequest,
   settleWalletRequest,
   TransactionEvidence,
+  SendAuthority,
   type LiveRequestState,
 } from "../../lib/live/transactions.ts";
 import { useLiveWallet } from "./live-wallet-provider.tsx";
@@ -114,6 +115,7 @@ export function LiveRegistrySection({
     reads.getSnapshot,
   );
   const evidence = useMemo(() => new TransactionEvidence(), []);
+  const snapshotAuthority = useMemo(() => new SendAuthority(), []);
   const [, evidenceVersion] = useState(0);
   const recordRequest = useCallback(
     (key: string, state: LiveRequestState) => {
@@ -133,25 +135,44 @@ export function LiveRegistrySection({
     track.scrollBy({ left: direction * track.clientWidth, behavior: "smooth" });
   }, []);
 
-  const refresh = useCallback(
-    () =>
-      reads.run(
-        registryAccountId,
-        (signal) =>
-          fetchLiveRegistrySnapshot(config, registryAccountId, { signal }),
-        false,
-      ),
-    [reads, config, registryAccountId],
-  );
+  const refresh = useCallback(() => {
+    snapshotAuthority.invalidate(); // Synchronous, before React publishes loading.
+    const deadline = performance.now() + RPC_LIMITS.deadlineMs;
+    return reads.run(
+      registryAccountId,
+      (signal) =>
+        fetchLiveRegistrySnapshot(config, registryAccountId, { signal }),
+      false,
+      () => {
+        if (performance.now() >= deadline)
+          throw new LiveRpcError(
+            "ERR_RPC_DEADLINE",
+            "Refresh publication exceeded its deadline.",
+          );
+      },
+    );
+  }, [reads, config, registryAccountId, snapshotAuthority]);
   useEffect(() => {
     void refresh();
-    return () => reads.cancel();
-  }, [refresh, reads]);
+    return () => {
+      snapshotAuthority.invalidate();
+      reads.cancel();
+    };
+  }, [refresh, reads, snapshotAuthority]);
 
   const snapshot =
     readState.dataKey === registryAccountId ? readState.data : null;
   const fresh =
     readState.status === "READY" && readState.dataKey === registryAccountId;
+  snapshotAuthority.update(
+    JSON.stringify([
+      registryAccountId,
+      snapshot?.block.hash,
+      snapshot?.block.height,
+      fresh,
+      wallet.accountId,
+    ]),
+  );
   const loading = readState.status === "LOADING" || readState.status === "IDLE";
   const readFailure =
     readState.status === "ERROR" ? failureText(readState.error) : null;
@@ -232,9 +253,12 @@ export function LiveRegistrySection({
               <span className="exact-value">
                 {snapshot.block.timestampNs} ns
               </span>{" "}
-              ({nsToDate(snapshot.block.timestampNs)}). Read-only JSON-RPC to{" "}
-              <code>{config.nodeUrl}</code>. Foundation status:{" "}
-              <code>{snapshot.foundationStatus}</code>
+              ({nsToDate(snapshot.block.timestampNs)}). Validated read
+              endpoint(s):{" "}
+              <code>
+                {snapshot.endpoints.join(", ") || "provenance unavailable"}
+              </code>
+              . Foundation status: <code>{snapshot.foundationStatus}</code>
               {snapshot.enumerationStop === "COMPLETE"
                 ? ""
                 : snapshot.enumerationStop === "CAPPED"
@@ -293,6 +317,7 @@ export function LiveRegistrySection({
                   registryAccountId={registryAccountId}
                   observedBlockTimestampNs={snapshot.block.timestampNs}
                   fresh={fresh}
+                  snapshotAuthority={snapshotAuthority}
                   evidence={evidence}
                   recordRequest={recordRequest}
                   onSent={() => void refresh()}
@@ -377,6 +402,7 @@ function LiveTemplateGroup({
   registryAccountId,
   observedBlockTimestampNs,
   fresh,
+  snapshotAuthority,
   evidence,
   recordRequest,
   onSent,
@@ -385,6 +411,7 @@ function LiveTemplateGroup({
   registryAccountId: string;
   observedBlockTimestampNs: string;
   fresh: boolean;
+  snapshotAuthority: SendAuthority;
   evidence: TransactionEvidence;
   recordRequest: (key: string, state: LiveRequestState) => void;
   onSent: () => void;
@@ -397,6 +424,8 @@ function LiveTemplateGroup({
     derivation.getSnapshot,
   );
   const [evidenceDraft, setEvidenceDraft] = useState(EMPTY_EVIDENCE_DRAFT);
+  const inputAuthority = useMemo(() => new SendAuthority(), []);
+  useEffect(() => () => inputAuthority.invalidate(), [inputAuthority]);
 
   const template = read.template;
   const templateId = read.templateId;
@@ -415,6 +444,7 @@ function LiveTemplateGroup({
     wallet.accountId,
   ]);
   const inputKey = JSON.stringify([contextKey, evidenceDraft, fresh]);
+  inputAuthority.update(inputKey);
   // The editor may retain the last validated cycle view for these same inputs;
   // its obsolete intents are never read by the send path.
   const evidenceEditable =
@@ -511,9 +541,20 @@ function LiveTemplateGroup({
       evidence.get(key).status === "PENDING"
     )
       return;
+    const snapshotToken = snapshotAuthority.capture(
+      gate.accountId,
+      () => sendGate.current.fresh,
+    );
+    const token = inputAuthority.capture(
+      gate.accountId,
+      () =>
+        snapshotToken.valid() &&
+        derivation.current(gate.inputKey) !== null &&
+        sendGate.current.accountId === gate.accountId,
+    );
     recordRequest(key, { status: "PENDING", method });
     const outcome = await settleWalletRequest(() =>
-      wallet.sendIntent(intent, registryAccountId),
+      wallet.sendIntent(intent, registryAccountId, token),
     );
     if (outcome.kind === "SUCCESS") {
       recordRequest(key, {
@@ -674,12 +715,13 @@ function LiveTemplateGroup({
                     autoComplete="off"
                     spellCheck={false}
                     value={evidenceDraft[field]}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      inputAuthority.invalidate();
                       setEvidenceDraft((draft) => ({
                         ...draft,
                         [field]: event.target.value,
-                      }))
-                    }
+                      }));
+                    }}
                   />
                 </label>
               ))}

@@ -236,12 +236,16 @@ test("whole-body transport failures retry, timeout settles non-cooperative fetch
     const context = testContext(async () => {
       calls++;
       if (phase === "fetch") return new Promise<Response>(() => {});
-      const response = new Response("ignored");
-      response.text = () =>
-        phase === "body"
-          ? new Promise<string>(() => {})
-          : Promise.reject(new Error("secret upstream detail"));
-      return response;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull:
+            phase === "body"
+              ? () => new Promise<void>(() => {})
+              : () => {
+                  throw new Error("secret upstream detail");
+                },
+        }),
+      );
     });
     try {
       await assert.rejects(
@@ -259,9 +263,12 @@ test("deterministic HTTP refusal ignores even a hanging/error body and schema er
   let calls = 0;
   const refusal = testContext(async () => {
     calls++;
-    const response = new Response("ignored", { status: 403 });
-    response.text = () => new Promise<string>(() => {});
-    return response;
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        pull: () => new Promise<void>(() => {}),
+      }),
+      { status: 403 },
+    );
   });
   try {
     await assert.rejects(
@@ -390,13 +397,20 @@ test("deadline, shared attempt budget and pool bound many simultaneous reads", a
       active++;
       attempts++;
       peak = Math.max(peak, active);
-      const response = envelope("ok");
-      response.text = async () => {
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        active--;
-        return '{"result":"ok"}';
-      };
-      return response;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start: async (controller) => {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            active--;
+            try {
+              controller.enqueue(new TextEncoder().encode('{"result":"ok"}'));
+              controller.close();
+            } catch {
+              /* budget may cancel sibling */
+            }
+          },
+        }),
+      );
     },
     { maxAttempts: 8 },
   );
@@ -440,9 +454,11 @@ test("abort cancels fetch/body, queued requests and backoff without extra attemp
         attempts++;
         if (phase === "fetch") return new Promise<Response>(() => {});
         if (phase === "backoff") return new Response("bad", { status: 503 });
-        const response = envelope(null);
-        response.text = () => new Promise<string>(() => {});
-        return response;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull: () => new Promise<void>(() => {}),
+          }),
+        );
       },
       { backoffMs: phase === "backoff" ? 100 : 0, timeoutMs: 100 },
     );

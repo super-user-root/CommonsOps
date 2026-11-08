@@ -209,7 +209,13 @@ reads. A refresh shares a maximum of four active HTTP requests, 96 total
 attempts, two attempts per endpoint per read, a 6-second fetch/body timeout,
 250 ms cancellable backoff, and a 40-second overall deadline. Transport/body
 failures, timeouts, 429, 5xx and explicit transient RPC errors may retry;
-deterministic request/schema/contract failures do not retry blindly.
+deterministic request/schema/contract failures do not retry blindly. Response
+streams are capped at 2 MiB before full decoding (contract results at 64 KiB),
+with JSON depth 64, 300,000 scanner nodes and 4 MiB scanner work. Duplicate
+decoded keys (including escaped equivalents) and result/error ambiguity fail
+closed. Monotonic absolute deadlines are rechecked after awaits and validation
+and before refresh publication. The displayed endpoint list records actual
+validated primary/archival responses, not merely the configured primary.
 
 Template IDs are discovered in order until null, capped at 16. Discovery
 reports complete/capped/interrupted separately. Cycles then use a four-worker
@@ -219,7 +225,11 @@ registry section** (the separate state-pattern gallery intentionally shows an
 ERROR example). Earlier verified data remains labelled **stale**, with signing
 disabled until refresh succeeds. Reading blocks duplicate refresh clicks;
 unmount cancels reads and obsolete completions cannot overwrite new state.
-Account/evidence changes immediately invalidate obsolete intents. Wallet-reported
+Account/evidence changes immediately invalidate obsolete intents. A send token
+also covers snapshot generation and unmount, and is revalidated after selector
+initialization, wallet selection and conversion against current selector accounts
+immediately before signing, with an explicit signerId. Invalidated preparations
+make no signing call and transactions are never automatically retried. Wallet-reported
 transaction hashes/explorer links persist for this page session across refreshes,
 including template removal or errors; they do not certify execution or payment.
 Recorded previews remain unsigned; use the live registry for contributor sends.

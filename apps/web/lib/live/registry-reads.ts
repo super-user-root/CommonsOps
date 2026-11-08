@@ -41,6 +41,7 @@ export interface LiveRegistrySnapshot {
   readonly registryAccountId: string;
   readonly block: FinalBlockHeader;
   readonly foundationStatus: string;
+  readonly endpoints: readonly string[];
   readonly templates: readonly LiveTemplateRead[];
   readonly enumerationComplete: boolean;
   readonly enumerationStop: "COMPLETE" | "CAPPED" | "INTERRUPTED";
@@ -55,6 +56,8 @@ export interface RegistryReadDeps {
   ) => Promise<unknown>;
   readonly signal?: AbortSignal;
   readonly cancel?: () => void;
+  readonly check?: () => void;
+  readonly endpoints?: () => readonly string[];
 }
 export function liveReadDeps(
   nodeUrl: string,
@@ -63,6 +66,8 @@ export function liveReadDeps(
   return {
     signal: context.signal,
     cancel: () => context.cancel(),
+    check: () => context.check(),
+    endpoints: () => context.endpoints(),
     fetchBlockHeader: () => fetchFinalBlockHeader(nodeUrl, context),
     fetchView: (accountId, methodName, args, block) =>
       callViewFunction(nodeUrl, accountId, methodName, args, block, context),
@@ -199,8 +204,10 @@ export async function buildRegistrySnapshot(
     if (fatal !== undefined) throw fatal;
     if (controller.signal.aborted)
       throw new LiveRpcError("ERR_RPC_CANCELLED", "Live read cancelled.");
+    deps.check?.();
     return Object.freeze({
       registryAccountId,
+      endpoints: Object.freeze([...(deps.endpoints?.() ?? [])]),
       block,
       foundationStatus,
       templates: Object.freeze(templates),
@@ -219,10 +226,12 @@ export async function fetchLiveRegistrySnapshot(
 ): Promise<LiveRegistrySnapshot> {
   const context = new RpcContext(options);
   try {
-    return await buildRegistrySnapshot(
+    const snapshot = await buildRegistrySnapshot(
       liveReadDeps(config.nodeUrl, context),
       registryAccountId,
     );
+    context.check();
+    return snapshot;
   } finally {
     context.dispose();
   }

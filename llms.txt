@@ -44,7 +44,12 @@ https://super-user-root.github.io/CommonsOps/
   APPLIED / IDEMPOTENT / CONFLICT / NOT_APPLIED statuses
 - [Snapshot transport](apps/web/lib/live/rpc.ts): official testnet primary/archival
   endpoints; max4 HTTP, 96 attempts, 6s fetch/body timeout, 40s refresh deadline;
-  pinned block hash/height validation and lossless header U64 digits
+  pinned block hash/height validation and lossless header U64 digits; actual
+  validated endpoint provenance, duplicate-safe bounded JSON, 2 MiB stream/
+  64 KiB contract result caps and monotonic elapsed deadline checks
+- [Guarded wallet send](apps/web/lib/live/transactions.ts): generation/input/
+  snapshot/account guards rechecked after preparation awaits before signing,
+  bound signerId; no automatic transaction retry
 - [Async state controller](apps/web/lib/live/latest-task.ts): latest-input gates,
   cancellation, stale retained data (not sendable); async behavior tests alongside
 - [Web workspace](apps/web/app/page.tsx): recorded-journey stages plus a

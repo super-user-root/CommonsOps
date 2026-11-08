@@ -43,6 +43,7 @@ export class LatestTask<T> {
     key: string,
     work: (signal: AbortSignal) => Promise<T>,
     replace = true,
+    checkPublication?: () => void,
   ): Promise<boolean> {
     if (!replace && this.state.status === "LOADING" && this.controller)
       return false;
@@ -55,6 +56,7 @@ export class LatestTask<T> {
       const data = await work(controller.signal);
       if (generation !== this.generation || controller.signal.aborted)
         return false;
+      checkPublication?.();
       this.publish({ status: "READY", key, dataKey: key, data, error: null });
       return true;
     } catch (error) {

@@ -88,7 +88,14 @@ block identity and preserves exact header timestamp digits. Primary/archival
 fetch/body, two attempts per endpoint and a 40s overall deadline. Null-terminated
 template discovery is ordered and capped at16, followed by a four-worker cycle
 pool. Transport/timeouts/429/5xx/explicit transient RPC failures retry; schema,
-method/account/argument and contract failures do not blindly retry.
+method/account/argument and contract failures do not blindly retry. Streams
+are bounded at 2 MiB, decoded contract results at 64 KiB, JSON depth at64,
+scanner nodes at300,000 and scanner work at4 MiB. Duplicate decoded JSON keys
+and ambiguous result/error envelopes are refused. Monotonic deadlines are
+checked after awaits/validation and before publication. Endpoint provenance
+lists only actual validated responses. Guarded sends revalidate snapshot/input/
+account generations and current selector accounts after each preparation await,
+bind signerId, and never automatically retry a transaction.
 
 Run `pnpm --filter @commonsops/web test` to exercise body failures, cancellation,
 retry classification, budgets, block pinning, lossless U64 parsing, ordered

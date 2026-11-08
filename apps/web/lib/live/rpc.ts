@@ -5,6 +5,7 @@
 
 import type { Cycle, Template } from "@commonsops/domain";
 import { isCanonicalDecimal } from "@commonsops/domain";
+import { parseBoundedJson, BoundedJsonError } from "./bounded-json.ts";
 
 export class LiveRpcError extends Error {
   readonly code: string;
@@ -44,7 +45,92 @@ export const RPC_LIMITS = Object.freeze({
   timeoutMs: 6_000,
   deadlineMs: 40_000,
   backoffMs: 250,
+  maxResponseBytes: 2_097_152,
+  maxContractBytes: 65_536,
+  maxJsonDepth: 64,
+  maxJsonNodes: 300_000,
+  maxJsonWork: 4_194_304,
 });
+type ReadLimits = { readonly [K in keyof typeof RPC_LIMITS]: number };
+function parseJson(
+  raw: string,
+  limits: ReadLimits = RPC_LIMITS,
+  lossless = false,
+): unknown {
+  try {
+    return parseBoundedJson(raw, limits, lossless);
+  } catch (error) {
+    throw rpcError(
+      "ERR_RPC_INVALID_RESPONSE",
+      error instanceof BoundedJsonError
+        ? error.message
+        : "Invalid bounded JSON.",
+    );
+  }
+}
+
+// Consume bounded bytes from the real stream, never unrestricted text().
+// A chunk exceeding the budget is cancelled before it is retained/decoded.
+async function readBody(
+  response: Response,
+  limit: number,
+  signal: AbortSignal,
+  check: () => void,
+): Promise<string> {
+  const declared = response.headers.get("content-length");
+  if (declared && /^\d+$/.test(declared) && Number(declared) > limit) {
+    void response.body?.cancel().catch(() => {});
+    throw rpcError(
+      "ERR_RPC_RESPONSE_LIMIT",
+      "RPC response byte limit exceeded.",
+    );
+  }
+  const reader = response.body?.getReader();
+  if (!reader)
+    throw rpcError("ERR_RPC_INVALID_RESPONSE", "RPC response stream missing.");
+  const cancel = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  let complete = false;
+  try {
+    while (true) {
+      check();
+      const chunk = await abortable(reader.read(), signal);
+      check();
+      if (chunk.done) {
+        complete = true;
+        break;
+      }
+      if (chunk.value.byteLength > limit - length)
+        throw rpcError(
+          "ERR_RPC_RESPONSE_LIMIT",
+          "RPC response byte limit exceeded.",
+        );
+      length += chunk.value.byteLength;
+      chunks.push(chunk.value);
+    }
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    check();
+    return text;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    if (!complete) cancel();
+    try {
+      reader.releaseLock();
+    } catch {
+      /* cancelled read may still settle */
+    }
+  }
+}
 
 const TRANSIENT_CODES = new Set([
   "ERR_RPC_UNREACHABLE",
@@ -68,6 +154,7 @@ export function isInfrastructureError(error: unknown): boolean {
 export interface RpcOptions {
   readonly fetch?: typeof fetch;
   readonly signal?: AbortSignal;
+  readonly now?: () => number; // Scoped monotonic clock injection for tests.
   readonly limits?: Partial<{
     readonly [K in keyof typeof RPC_LIMITS]: number;
   }>;
@@ -123,7 +210,13 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 
 export class RpcContext {
   readonly signal: AbortSignal;
-  readonly limits: { readonly [K in keyof typeof RPC_LIMITS]: number };
+  readonly limits: ReadLimits;
+  private readonly now: () => number;
+  private readonly deadline: number;
+  private readonly validatedEndpoints = new Set<string>();
+  endpoints(): readonly string[] {
+    return Object.freeze([...this.validatedEndpoints]);
+  }
   private readonly controller = new AbortController();
   private readonly fetcher: typeof fetch;
   private readonly timer: ReturnType<typeof setTimeout>;
@@ -149,6 +242,8 @@ export class RpcContext {
       }
     }
     this.limits = Object.freeze(limits);
+    this.now = options.now ?? (() => performance.now());
+    this.deadline = this.now() + limits.deadlineMs;
     this.signal = this.controller.signal;
     this.fetcher = options.fetch ?? globalThis.fetch;
     const abort = () => this.cancel();
@@ -176,7 +271,14 @@ export class RpcContext {
     this.detach();
     this.cancel();
   }
-  private check(): void {
+  check(): void {
+    if (this.now() >= this.deadline && !this.signal.aborted)
+      this.controller.abort(
+        rpcError(
+          "ERR_RPC_DEADLINE",
+          "Live read exceeded its overall deadline.",
+        ),
+      );
     if (this.signal.aborted) throw abortError(this.signal);
   }
   private async acquire(): Promise<void> {
@@ -251,6 +353,22 @@ export class RpcContext {
             }
             this.attempts++;
             const attemptController = new AbortController();
+            const attemptDeadline = this.now() + this.limits.timeoutMs;
+            const checkAttempt = () => {
+              this.check();
+              if (
+                this.now() >= attemptDeadline &&
+                !attemptController.signal.aborted
+              )
+                attemptController.abort(
+                  rpcError(
+                    "ERR_RPC_TIMEOUT",
+                    "RPC fetch, body or validation timed out.",
+                  ),
+                );
+              if (attemptController.signal.aborted)
+                throw abortError(attemptController.signal);
+            };
             const abort = () =>
               attemptController.abort(abortError(this.signal));
             this.signal.addEventListener("abort", abort, { once: true });
@@ -284,7 +402,9 @@ export class RpcContext {
                   ),
                   attemptController.signal,
                 );
+                checkAttempt();
                 if (!response.ok) {
+                  void response.body?.cancel().catch(() => {});
                   if (response.status === 429)
                     throw rpcError(
                       "ERR_RPC_RATE_LIMITED",
@@ -300,10 +420,13 @@ export class RpcContext {
                     "RPC refused the read request.",
                   );
                 }
-                raw = await abortable(
-                  Promise.resolve().then(() => response.text()),
+                raw = await readBody(
+                  response,
+                  this.limits.maxResponseBytes,
                   attemptController.signal,
+                  checkAttempt,
                 );
+                checkAttempt();
               } catch (error) {
                 if (attemptController.signal.aborted)
                   throw abortError(attemptController.signal);
@@ -313,9 +436,11 @@ export class RpcContext {
                   "RPC transport or response body failed.",
                 );
               }
-              const result = parseEnvelope(raw);
+              const result = parseEnvelope(raw, this.limits);
+              checkAttempt();
               const validated = validate(result, raw);
-              this.check();
+              checkAttempt();
+              this.validatedEndpoints.add(endpoint);
               this.preferred = endpoint; // Only a schema/metadata-valid answer wins.
               return validated;
             } finally {
@@ -343,15 +468,15 @@ export class RpcContext {
   }
 }
 
-function parseEnvelope(raw: string): unknown {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(raw) as unknown;
-  } catch {
-    throw rpcError("ERR_RPC_INVALID_RESPONSE", "RPC body is not valid JSON.");
-  }
+function parseEnvelope(raw: string, limits: ReadLimits = RPC_LIMITS): unknown {
+  const payload = parseJson(raw, limits);
   if (!isObject(payload))
     throw rpcError("ERR_RPC_INVALID_RESPONSE", "RPC envelope is missing.");
+  if ("result" in payload && "error" in payload)
+    throw rpcError(
+      "ERR_RPC_INVALID_RESPONSE",
+      "Ambiguous RPC result/error envelope.",
+    );
   if (isObject(payload.error)) {
     const error = payload.error;
     const cause = isObject(error.cause) ? error.cause : {};
@@ -422,7 +547,10 @@ export function encodeViewArgs(args: unknown): string {
 
 // Decodes a `query / call_function` result: an array of byte values holding
 // the UTF-8 JSON of the contract's return value ("null" for Option::None).
-export function decodeCallFunctionResult(payload: unknown): unknown {
+export function decodeCallFunctionResult(
+  payload: unknown,
+  limits: ReadLimits = RPC_LIMITS,
+): unknown {
   if (!isObject(payload) || !Array.isArray(payload.result)) {
     throw new LiveRpcError(
       "ERR_RPC_INVALID_RESPONSE",
@@ -430,6 +558,11 @@ export function decodeCallFunctionResult(payload: unknown): unknown {
     );
   }
   const bytes = payload.result;
+  if (bytes.length > limits.maxContractBytes)
+    throw rpcError(
+      "ERR_RPC_RESPONSE_LIMIT",
+      "Contract result byte limit exceeded.",
+    );
   if (
     !bytes.every(
       (byte) =>
@@ -444,15 +577,18 @@ export function decodeCallFunctionResult(payload: unknown): unknown {
       "call_function result is not a byte array",
     );
   }
-  const text = textDecoder.decode(Uint8Array.from(bytes));
+  let text: string;
   try {
-    return JSON.parse(text) as unknown;
+    text = new TextDecoder("utf-8", { fatal: true }).decode(
+      Uint8Array.from(bytes),
+    );
   } catch {
-    throw new LiveRpcError(
+    throw rpcError(
       "ERR_RPC_INVALID_RESPONSE",
-      "result is not valid JSON",
+      "Contract result is not valid UTF-8.",
     );
   }
+  return parseJson(text, limits);
 }
 
 export async function callViewFunction(
@@ -474,7 +610,7 @@ export async function callViewFunction(
       args_base64: encodeViewArgs(args),
     },
     (payload, raw) => {
-      const lossless = losslessNumbers(raw);
+      const lossless = parseJson(raw, context.limits, true);
       const result =
         isObject(lossless) && isObject(lossless.result)
           ? lossless.result
@@ -489,7 +625,7 @@ export async function callViewFunction(
           "View response does not match the selected finalized block.",
         );
       }
-      return decodeCallFunctionResult(payload);
+      return decodeCallFunctionResult(payload, context.limits);
     },
   );
 }
@@ -500,43 +636,12 @@ export interface FinalBlockHeader {
   readonly hash: string;
 }
 
-// Lexically preserve numeric tokens before parsing the structure. Strings
-// (including escaped quotes and numbers in unrelated fields) stay untouched.
-// Never stringify a rounded JS number to recover onchain U64 values.
-function losslessNumbers(raw: string): unknown {
-  let transformed = "";
-  for (let index = 0; index < raw.length;) {
-    const char = raw[index]!;
-    if (char === '"') {
-      const start = index++;
-      while (index < raw.length) {
-        const next = raw[index++];
-        if (next === "\\") index++;
-        else if (next === '"') break;
-      }
-      transformed += raw.slice(start, index);
-    } else if (char === "-" || /[0-9]/.test(char)) {
-      const token = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(
-        raw.slice(index),
-      )?.[0];
-      if (!token)
-        throw rpcError(
-          "ERR_RPC_INVALID_RESPONSE",
-          "Malformed JSON numeric token.",
-        );
-      transformed += JSON.stringify(token);
-      index += token.length;
-    } else {
-      transformed += char;
-      index++;
-    }
-  }
-  return JSON.parse(transformed) as unknown;
-}
-
-export function parseFinalBlockHeader(raw: string): FinalBlockHeader {
-  parseEnvelope(raw);
-  const payload = losslessNumbers(raw);
+export function parseFinalBlockHeader(
+  raw: string,
+  limits: ReadLimits = RPC_LIMITS,
+): FinalBlockHeader {
+  parseEnvelope(raw, limits);
+  const payload = parseJson(raw, limits, true);
   const header =
     isObject(payload) &&
     isObject(payload.result) &&
@@ -574,7 +679,7 @@ export async function fetchFinalBlockHeader(
       nodeUrl,
       "block",
       { finality: "final" },
-      (_result, raw) => parseFinalBlockHeader(raw),
+      (_result, raw) => parseFinalBlockHeader(raw, owned.limits),
     );
   } finally {
     if (!context) owned.dispose();

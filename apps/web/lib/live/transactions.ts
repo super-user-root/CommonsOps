@@ -65,6 +65,83 @@ export function contributorWalletTransaction(
   });
 }
 
+export interface SendToken {
+  readonly signerId: string;
+  readonly valid: () => boolean;
+}
+// One generation guards synchronous input/snapshot/account changes as well as
+// unmount. A changed value cannot become valid again by returning to old input.
+export class SendAuthority {
+  private generation = 0;
+  private key: string | null = null;
+  invalidate(): void {
+    this.generation++;
+    this.key = null;
+  }
+  update(key: string): void {
+    if (key !== this.key) {
+      this.generation++;
+      this.key = key;
+    }
+  }
+  capture(signerId: string, additionallyValid: () => boolean): SendToken {
+    const generation = this.generation;
+    return Object.freeze({
+      signerId,
+      valid: () => generation === this.generation && additionallyValid(),
+    });
+  }
+}
+export function activeSelectorAccount(
+  accounts: readonly {
+    readonly accountId: string;
+    readonly active?: boolean;
+  }[],
+): string | null {
+  return (
+    (
+      accounts.find((account) => account.active) ??
+      accounts.find((account) => account.accountId)
+    )?.accountId ?? null
+  );
+}
+export async function guardedWalletSend<Prepared, Wallet, Converted>(
+  transaction: WalletTransaction,
+  token: SendToken,
+  deps: {
+    readonly prepare: () => Promise<Prepared>;
+    readonly select: (prepared: Prepared) => Promise<Wallet>;
+    readonly convert: (transaction: WalletTransaction) => Promise<Converted>;
+    readonly currentSigner: (prepared: Prepared) => string | null;
+    readonly sign: (
+      wallet: Wallet,
+      transaction: Converted,
+      signerId: string,
+    ) => Promise<readonly unknown[]>;
+  },
+): Promise<readonly unknown[]> {
+  const check = (prepared?: Prepared) => {
+    if (
+      !token.valid() ||
+      (prepared !== undefined &&
+        deps.currentSigner(prepared) !== token.signerId)
+    ) {
+      throw new Error(
+        "ERR_STALE_SEND: Inputs, snapshot or signer changed. No signing request was made.",
+      );
+    }
+  };
+  check();
+  const prepared = await deps.prepare();
+  check(prepared);
+  const wallet = await deps.select(prepared);
+  check(prepared);
+  const converted = await deps.convert(transaction);
+  check(prepared);
+  // No await between last check/current selector account and signing invocation.
+  return deps.sign(wallet, converted, token.signerId);
+}
+
 export interface WalletSelectorTransaction {
   readonly receiverId: string;
   readonly actions: Action[];

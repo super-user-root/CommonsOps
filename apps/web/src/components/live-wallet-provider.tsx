@@ -22,6 +22,10 @@ import type {
 import { LIVE_NETWORK_ID } from "../../lib/live/network.ts";
 import {
   contributorWalletTransaction,
+  guardedWalletSend,
+  activeSelectorAccount,
+  SendAuthority,
+  type SendToken,
   sendContributorIntent,
   toWalletSelectorTransaction,
   type SendOutcome,
@@ -43,6 +47,7 @@ export interface LiveWalletContextValue {
   readonly sendIntent: (
     intent: Parameters<typeof contributorWalletTransaction>[0],
     registryAccountId: string,
+    token: SendToken,
   ) => Promise<SendOutcome>;
 }
 
@@ -60,18 +65,17 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const bundleRef = useRef<WalletSelectorBundle | null>(null);
   const initRef = useRef<Promise<WalletSelectorBundle> | null>(null);
+  const sendAuthority = useMemo(() => new SendAuthority(), []);
 
-  const syncAccounts = useCallback((selector: WalletSelector) => {
-    const accounts = selector.store.getState().accounts;
-    const active =
-      accounts.find((account) => account.active) ??
-      accounts.find((account) => account.accountId);
-    setAccountId(
-      typeof active?.accountId === "string" && active.accountId.length > 0
-        ? active.accountId
-        : null,
-    );
-  }, []);
+  const syncAccounts = useCallback(
+    (selector: WalletSelector) => {
+      const accounts = selector.store.getState().accounts;
+      const active = activeSelectorAccount(accounts);
+      sendAuthority.update(active ?? "disconnected");
+      setAccountId(active);
+    },
+    [sendAuthority],
+  );
 
   const ensureSelector =
     useCallback(async (): Promise<WalletSelectorBundle> => {
@@ -109,6 +113,7 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
   }, [ensureSelector]);
 
   const disconnect = useCallback(async () => {
+    sendAuthority.invalidate();
     try {
       const bundle = bundleRef.current;
       if (bundle) {
@@ -125,29 +130,34 @@ export function LiveWalletProvider({ children }: { children: ReactNode }) {
     async (
       intent: Parameters<typeof contributorWalletTransaction>[0],
       registryAccountId: string,
+      token: SendToken,
     ): Promise<SendOutcome> => {
+      const guardedToken = sendAuthority.capture(token.signerId, token.valid);
       return sendContributorIntent(
-        async (transaction: WalletTransaction) => {
-          // Initialization, selection and construction all sit inside the
-          // send result boundary; none can strand a UI request in PENDING.
-          const bundle = await ensureSelector();
-          const wallet = await bundle.selector.wallet();
-          const selectorTransaction =
-            await toWalletSelectorTransaction(transaction);
-          const result = await wallet.signAndSendTransactions({
-            transactions: [selectorTransaction],
-          });
-          return result as readonly FinalExecutionOutcome[];
-        },
+        (transaction: WalletTransaction) =>
+          guardedWalletSend(transaction, guardedToken, {
+            prepare: ensureSelector,
+            select: (bundle) => bundle.selector.wallet(),
+            convert: toWalletSelectorTransaction,
+            currentSigner: (bundle) =>
+              activeSelectorAccount(bundle.selector.store.getState().accounts),
+            sign: async (wallet, converted, signerId) => {
+              const result = await wallet.signAndSendTransactions({
+                transactions: [{ ...converted, signerId }],
+              });
+              return result as readonly FinalExecutionOutcome[];
+            },
+          }),
         intent,
         registryAccountId,
       );
     },
-    [ensureSelector],
+    [ensureSelector, sendAuthority],
   );
 
   useEffect(() => {
     return () => {
+      sendAuthority.invalidate();
       initRef.current = null;
       bundleRef.current = null;
     };
