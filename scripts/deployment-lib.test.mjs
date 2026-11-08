@@ -2,9 +2,8 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { test } from "node:test";
+import { loadDeployedWasm } from "../tests/fixtures/deployment/fixture.mjs";
 import {
   REVIEWED_CONTRACT_TREE,
   REVIEWED_SOURCE_HEAD,
@@ -136,11 +135,7 @@ test("transaction verifier rejects wrong action order and code", () => {
 });
 
 test("transaction verifier accepts exact reviewed atomic receipt provenance", async () => {
-  const wasmPath = path.resolve(
-    import.meta.dirname,
-    "../contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
-  );
-  const code = await readFile(wasmPath);
+  const code = await loadDeployedWasm();
   const manifest = createDeploymentManifest(input);
   manifest.transactionHash = "4".repeat(44);
   manifest.status = "DEPLOYED";
@@ -152,6 +147,41 @@ test("transaction verifier accepts exact reviewed atomic receipt provenance", as
   assert.equal(verified.transactionBlockHash, "5".repeat(44));
   assert.equal(verified.postStateBlockHash, "7".repeat(44));
   assert.deepEqual(verified.receiptIds, ["6".repeat(44)]);
+});
+
+test("deployed fixture pins exact bytes and rejects mutations even with valid WASM structure", async () => {
+  const code = await loadDeployedWasm();
+  assert.ok(WebAssembly.validate(code));
+  const manifest = createDeploymentManifest(input);
+  manifest.transactionHash = "4".repeat(44);
+  manifest.status = "DEPLOYED";
+  verifyDeploymentTransaction(manifest, fakeTransaction(manifest, code));
+  const changedByte = Buffer.from(code);
+  changedByte[changedByte.length - 1] ^= 1;
+  // A custom section leaves executable structure/exports unchanged, but these
+  // different bytes must never be accepted as the immutable deployed artifact.
+  const structurallyValidDifferent = Buffer.concat([
+    code,
+    Buffer.from([0, 2, 1, 120]),
+  ]);
+  assert.ok(WebAssembly.validate(structurallyValidDifferent));
+  for (const changed of [
+    changedByte,
+    code.subarray(0, code.length - 1),
+    structurallyValidDifferent,
+  ])
+    assert.throws(
+      () =>
+        verifyDeploymentTransaction(
+          manifest,
+          fakeTransaction(manifest, changed),
+        ),
+      /WASM does not match the reviewed artifact/,
+    );
+  assert.equal(
+    createHash("sha256").update(code).digest("hex"),
+    REVIEWED_WASM_SHA256,
+  );
 });
 
 test("transaction verifier accepts the nearcore 32-byte code view and rejects other lengths", async () => {
@@ -177,39 +207,47 @@ test("transaction verifier accepts the nearcore 32-byte code view and rejects ot
 });
 
 test("transaction verifier rejects mismatched transaction identity and unknown outcomes", async () => {
-  const code = await readFile(
-    path.resolve(
-      import.meta.dirname,
-      "../contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
-    ),
-  );
-  for (const mutate of [
-    (tx) => (tx.transaction.hash = "8".repeat(44)),
-    (tx) => (tx.transaction.public_key = `ed25519:${"9".repeat(44)}`),
-    (tx) => (tx.transaction.nonce += 1),
-    (tx) => (tx.transaction_outcome.outcome.status = {}),
-    (tx) => (tx.receipts_outcome[0].outcome.status = {}),
+  const code = await loadDeployedWasm();
+  for (const [mutate, reason] of [
+    [
+      (tx) => (tx.transaction.hash = "8".repeat(44)),
+      /hash\/key\/nonce\/signer\/receiver/,
+    ],
+    [
+      (tx) => (tx.transaction.public_key = `ed25519:${"9".repeat(44)}`),
+      /hash\/key\/nonce\/signer\/receiver/,
+    ],
+    [(tx) => (tx.transaction.nonce += 1), /hash\/key\/nonce\/signer\/receiver/],
+    [
+      (tx) => (tx.transaction_outcome.outcome.status = {}),
+      /missing, unknown or failed outcomes/,
+    ],
+    [
+      (tx) => (tx.receipts_outcome[0].outcome.status = {}),
+      /missing, unknown or failed outcomes/,
+    ],
   ]) {
     const manifest = createDeploymentManifest(input);
     manifest.transactionHash = "4".repeat(44);
     manifest.status = "DEPLOYED";
     const transaction = fakeTransaction(manifest, code);
+    // Positive control ensures each negative reaches its intended validator.
+    verifyDeploymentTransaction(manifest, transaction);
     mutate(transaction);
-    assert.throws(() => verifyDeploymentTransaction(manifest, transaction));
+    assert.throws(
+      () => verifyDeploymentTransaction(manifest, transaction),
+      reason,
+    );
   }
 });
 
 test("transaction verifier rejects an unrelated initialization event receipt", async () => {
-  const code = await readFile(
-    path.resolve(
-      import.meta.dirname,
-      "../contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
-    ),
-  );
+  const code = await loadDeployedWasm();
   const manifest = createDeploymentManifest(input);
   manifest.transactionHash = "4".repeat(44);
   manifest.status = "DEPLOYED";
   const transaction = fakeTransaction(manifest, code);
+  verifyDeploymentTransaction(manifest, transaction);
   transaction.receipts_outcome[0].outcome.logs = [];
   transaction.receipts_outcome.push({
     id: "8".repeat(44),

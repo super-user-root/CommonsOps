@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+// This is always the current host's fresh build. Structural validity/export
+// checks do not assert byte equality with the separately pinned deployed fixture.
 const wasmPath = new URL(
   "../contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
   import.meta.url,

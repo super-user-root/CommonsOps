@@ -17,17 +17,17 @@ See installed toolchains and cached dependencies. The first setup requires npm/c
 
 ## Checks: do X — see Y
 
-| Command                | Expected result                                                                                                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm lint`            | Pinned Prettier checks the same source/config/docs selection in bounded relative-file batches; Node checks runner syntax, and `cargo fmt --check` checks Rust. Any batch failure fails the check.            |
-| `pnpm typecheck`       | TypeScript checks domain, adapter, web, and tests (including JavaScript runner files); any type error fails.                                                                                                 |
-| `pnpm test`            | Foundation tests plus portable-runner regressions (selection, batching, long/spaced Unicode paths, direct invocation, failure propagation). Domain/adapter/web tests run through recursive `pnpm typecheck`. |
-| `pnpm test:contract`   | Rust registry business/invariant unit tests, including initialization, claims, deadlines, storage and proposal guards. Uses `--locked --offline`.                                                            |
-| `pnpm build`           | Next.js creates a production build under `apps/web/.next`; the overview is statically generated with no remote data/fonts.                                                                                   |
-| `pnpm build:contract`  | Rust builds the release WASM; Node validates WASM structure/exports/imports and runs deployment-verifier and historical-CLI regressions against the built artifact. Uses `--locked --offline`.               |
-| `pnpm test:production` | Starts the existing production build on an ephemeral loopback port; checks HTTP 200, live-surface/recorded-preview disclosures, metadata and HTTP 404; stops the server. Build first.                        |
-| `pnpm verify:offline`  | Runs every check above in order and prints a final PASS only if all pass. No skipped WASM fallback.                                                                                                          |
-| `pnpm format`          | Applies Prettier to project files; use when deliberately fixing formatting, not to bypass checks.                                                                                                            |
+| Command                | Expected result                                                                                                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm lint`            | Pinned Prettier checks the same source/config/docs selection in bounded relative-file batches; Node checks runner syntax, and `cargo fmt --check` checks Rust. Any batch failure fails the check.                    |
+| `pnpm typecheck`       | TypeScript checks domain, adapter, web, and tests (including JavaScript runner files); any type error fails.                                                                                                         |
+| `pnpm test`            | Foundation tests plus portable-runner regressions (selection, batching, long/spaced Unicode paths, direct invocation, failure propagation). Domain/adapter/web tests run through recursive `pnpm typecheck`.         |
+| `pnpm test:contract`   | Rust registry business/invariant unit tests, including initialization, claims, deadlines, storage and proposal guards. Uses `--locked --offline`.                                                                    |
+| `pnpm build`           | Next.js creates a production build under `apps/web/.next`; the overview is statically generated with no remote data/fonts.                                                                                           |
+| `pnpm build:contract`  | Rust builds fresh host WASM; Node validates its structure/exports/imports and reports its actual hash/size. Separate deployment/historical regressions use an immutable deployed fixture. Uses `--locked --offline`. |
+| `pnpm test:production` | Starts the existing production build on an ephemeral loopback port; checks HTTP 200, live-surface/recorded-preview disclosures, metadata and HTTP 404; stops the server. Build first.                                |
+| `pnpm verify:offline`  | Runs every check above in order and prints a final PASS only if all pass. No skipped WASM fallback.                                                                                                                  |
+| `pnpm format`          | Applies Prettier to project files; use when deliberately fixing formatting, not to bypass checks.                                                                                                                    |
 
 The formatter is launched with `process.execPath` and the installed, exact-pinned
 Prettier JavaScript CLI resolved through `createRequire`, never a Windows `.cmd`
@@ -40,6 +40,44 @@ No drive mapping, shortened-root recipe or `--preserve-symlinks` flag is needed.
 Unicode temporary root; the complete gate must still be run in each checkout.
 
 `verify:offline` disables Next telemetry and sets Cargo offline mode. It does not call NEAR RPC, GitHub, an indexer, a wallet, or another external service. The production smoke uses loopback HTTP, not a public network endpoint. Dependencies, platform-specific pnpm packages, Rust toolchain, and WASM target must already be available. Run setup again on a new host. This profile proves offline unit/invariant behavior, compilation, WASM structure and local HTTP behavior. It does **not** by itself prove NEAR VM execution, deployed state, treasury integration, browser interaction or signing safety; use the separate recorded evidence and checks for those boundaries.
+
+### Fresh build versus immutable deployed WASM
+
+`tests/wasm.test.mjs` always reads the freshly built
+`contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm`.
+It checks valid WASM, exact exported registry methods and allowed host imports,
+and prints that build's actual `WASM_SHA256` and `WASM_BYTES`. This is a structural
+build check, **not** proof that every host reproduces deployed bytes.
+
+Historical deployment/smoke test inputs instead use the immutable public fixture
+`tests/fixtures/deployment/9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c.wasm`.
+It was copied from the preserved Windows Rust1.98.0 release build of unchanged
+contract tree `979db78a521e045676db8dd0564b8d17d24ab8bc`, after independent byte
+length/SHA-256 checks against production pins and
+`deployments/testnet/prepared-deployment.json`. Its identity is:
+
+- SHA-256 `9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c`
+- Size **261,226 bytes**
+- NEAR code hash `Avdrs3wmsssxb3nDDAJsMyFqc137NaSSpF4JNuXGP4zP`
+- Deployed transaction `DTkNwnhsF73z4umYgSQgauCLdpPzgtnxeuTb7TE5Dd7R`, post-init
+  block `8Ajt9XEfAJVjiSFTo2aTPALWQsZkDpNr4x575BV4uobA`, height276385914.
+
+The read-only historical smoke on 2026-11-08 verified matching archival
+`view_code` bytes at that block. This fixture is the verified local build copy,
+not a newly fetched response and not a live-RPC fallback. The test-only loader
+checks its exact hash, size and code hash against the unchanged production pins
+and deployed manifest on every load. Mutation/length-change tests, including
+structurally valid WASM with different bytes, must still fail historical checks.
+Do not regenerate this fixture from an arbitrary host build.
+
+Linux Verify at commit `a0c7c7d6e94235e17d2af5fa6bc7933516b0dabe` produced
+**261,082 bytes**, SHA-256
+`17266c2ad8f0da768dc8716730cf3ef70157ebe8fe62973d6259e195856300c7`.
+Its structural test passed, but using those different bytes as the deployed test
+fixture correctly failed the strict deployment pin. Pinned Rust alone did not
+establish cross-host byte identity. The cause of the binary difference and
+behavioral equivalence are not established here. Production artifact pins,
+manifest, receipts and code verification are not relaxed to accept that digest.
 
 ## Prepare a testnet deployment without signing
 
@@ -139,7 +177,8 @@ are not a multi-file filesystem transaction). Failed verification leaves existin
 successful artifacts unchanged. Unknown/duplicate flags or extra arguments fail;
 there is no endpoint override, signing or retry-loop CLI flag.
 
-Focused offline checks (build the WASM first for deployment fixtures):
+Focused offline checks (deployment/historical tests use the checked-in deployed
+fixture; `pnpm build:contract` also builds and structurally checks fresh host WASM):
 
 ```text
 node --test tests/run.test.mjs

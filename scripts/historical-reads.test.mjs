@@ -21,6 +21,10 @@ import {
 } from "./deployment-lib.mjs";
 import { RPC_ENDPOINTS } from "../packages/near/src/read-only-rpc.ts";
 import {
+  DEPLOYED_WASM_PATH,
+  loadDeployedWasm,
+} from "../tests/fixtures/deployment/fixture.mjs";
+import {
   main as smoke,
   parseArgs as smokeArgs,
   verifySmoke,
@@ -122,8 +126,8 @@ function assertSmokeProvenance(provenance) {
   ]);
 }
 
-// Synthetic tx protocol fixture derived from the public manifest. The actual
-// reviewed built WASM is checked by view_code below, not synthetic zero bytes.
+// Synthetic tx protocol fixture derived from the public manifest. The immutable
+// deployed WASM fixture is checked by view_code, never a fresh host build.
 function deploymentTransaction() {
   return {
     final_execution_status: "FINAL",
@@ -167,12 +171,7 @@ async function smokeTransport({
   failover = false,
   mutate = (_method, value) => value,
 } = {}) {
-  const bytes = await readFile(
-    path.join(
-      ROOT,
-      "contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
-    ),
-  );
+  const bytes = await loadDeployedWasm();
   const calls = [];
   const signals = [];
   const attempts = new Map();
@@ -325,6 +324,38 @@ test("smoke verifies four logical reads at exact post-init block with full 16-at
     assertSmokeProvenance(SMOKE.runProvenance);
   assert.equal(result.wasmBytes, 261_226);
   assert.equal(result.wasmSha256, MANIFEST.wasmSha256);
+});
+
+test("smoke rejects byte mutations and structurally valid nondeployed view_code", async () => {
+  const bytes = await loadDeployedWasm();
+  const changedByte = Buffer.from(bytes);
+  changedByte[changedByte.length - 1] ^= 1;
+  const structurallyValidDifferent = Buffer.concat([
+    bytes,
+    Buffer.from([0, 2, 1, 120]),
+  ]);
+  assert.ok(WebAssembly.validate(structurallyValidDifferent));
+  for (const changed of [
+    changedByte,
+    bytes.subarray(0, bytes.length - 1),
+    structurallyValidDifferent,
+  ]) {
+    const probe = await smokeTransport({
+      mutate: (method, value) =>
+        method === "view_code"
+          ? { ...value, code_base64: changed.toString("base64") }
+          : value,
+    });
+    await assert.rejects(
+      verifySmoke(MANIFEST, "commonsops.testnet", { fetch: probe.fetch }),
+      /WASM does not match the reviewed artifact/,
+    );
+    assert.deepEqual(
+      probe.calls.map((call) => call.params.request_type ?? call.method),
+      ["EXPERIMENTAL_tx_status", "view_account", "view_code"],
+    );
+    assert.ok(probe.signals.every((signal) => signal.aborted));
+  }
 });
 
 test("smoke schema, receipt, identity, query metadata, WASM and foundation mismatches fail without retry", async () => {
@@ -555,7 +586,8 @@ test("saved default smoke output survives subsequent historical verification", a
     { code: "ERR_ASSERTION" },
   );
 
-  // Minimal scratch equivalent, with real reviewed WASM and fixture-only RPC.
+  // Minimal scratch equivalent with no host build output: historical positive
+  // controls must depend only on the pinned deployed fixture and mocked RPC.
   // Run only the existing comparison test so this subprocess cannot recurse.
   for (const relative of [
     "scripts/historical-reads.test.mjs",
@@ -569,7 +601,8 @@ test("saved default smoke output survives subsequent historical verification", a
     "packages/near/src/index.ts",
     "packages/near/src/proposal-builder.ts",
     "tests/fixtures/sputnik/dao-proposal-0-231-paid.json",
-    "contracts/registry/target/wasm32-unknown-unknown/release/commonsops_registry.wasm",
+    "tests/fixtures/deployment/fixture.mjs",
+    DEPLOYED_WASM_PATH,
   ]) {
     const target = path.join(root, relative);
     await mkdir(path.dirname(target), { recursive: true });
