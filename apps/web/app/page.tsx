@@ -42,14 +42,29 @@ export default async function HomePage() {
             </span>
             CommonsOps
           </a>
-          <nav className="journey-nav" aria-label="Recorded journey">
-            <a href="#live-registry">Live</a>
-            <a href="#operator-stage">Operator</a>
-            <a href="#contributor-stage">Contributor</a>
-            <a href="#reviewer-stage">Reviewer</a>
-            <a href="#state-handling">States</a>
+          <nav className="journey-nav" aria-label="Primary">
+            <a href="#live-registry">Live registry</a>
+            <a href="#journey">Journey</a>
+            <a href="#state-handling">State handling</a>
           </nav>
           <div className="header-actions">
+            <a
+              className="github-link"
+              href="https://github.com/super-user-root/CommonsOps"
+              aria-label="CommonsOps repository on GitHub"
+              title="CommonsOps on GitHub"
+            >
+              <svg
+                aria-hidden="true"
+                width="18"
+                height="18"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                focusable="false"
+              >
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+              </svg>
+            </a>
             <span className="network-badge testnet">Testnet workspace</span>
             <HeaderWalletButton />
           </div>
@@ -146,6 +161,7 @@ export default async function HomePage() {
 
         <section
           className="journey-section section-shell"
+          id="journey"
           aria-labelledby="journey-heading"
         >
           <div className="section-intro split-intro">
@@ -358,10 +374,45 @@ export default async function HomePage() {
         </section>
 
         <footer>
-          <span>CommonsOps · Testnet-first workspace</span>
-          <span>
-            No keys. No fabricated records. DAO payouts stay in the DAO.
-          </span>
+          <nav className="footer-columns" aria-label="Footer">
+            <div>
+              <p className="footer-heading">Explore</p>
+              <a href="#live-registry">Live registry</a>
+              <a href="#journey">Recorded journey</a>
+              <a href="#state-handling">State handling</a>
+              <a href="https://github.com/super-user-root/CommonsOps/blob/main/demo/README.md">
+                Demo guide
+              </a>
+            </div>
+            <div>
+              <p className="footer-heading">Try it</p>
+              <a href="https://github.com/super-user-root/CommonsOps">
+                GitHub repository
+              </a>
+              <a href="https://explorer.testnet.near.org/accounts/commonsops.testnet">
+                Registry on the explorer
+              </a>
+              <a href="https://github.com/super-user-root/CommonsOps/blob/main/docs/testnet-journey.md">
+                Journey record
+              </a>
+            </div>
+            <div>
+              <p className="footer-heading">Project</p>
+              <a href="https://github.com/super-user-root/CommonsOps/blob/main/LICENSE">
+                MIT License
+              </a>
+              <a href="https://nearhackathon.com/HACKATHON.md">
+                Live hackathon rules
+              </a>
+            </div>
+          </nav>
+          <div className="footer-legal">
+            <span>Built at NEAR HACKATHON · NEAR testnet only</span>
+            <span>
+              No keys. No fabricated records. DAO payouts stay in the DAO.
+            </span>
+            <span>CommonsOps · Testnet-first workspace</span>
+          </div>
         </footer>
       </main>
     </LiveWalletProvider>
