@@ -62,7 +62,7 @@
 
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: 24px;
+  scroll-padding-top: 76px;
 }
 
 body {
@@ -162,13 +162,38 @@ footer {
 }
 
 .masthead {
+  position: sticky;
+  top: 0;
+  z-index: 60;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 24px;
-  padding: 18px 0;
+  gap: 20px;
+  padding: 11px 0;
   border-bottom: 1px solid var(--d-line);
   color: var(--d-text);
+  background: rgb(0 0 0 / 96%);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 96%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.github-link {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--d-muted);
+  transition: color 0.2s ease;
+}
+
+.github-link:hover {
+  color: var(--d-text);
+}
+
+.github-link svg {
+  display: block;
 }
 
 .wordmark {
@@ -201,12 +226,23 @@ footer {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px 22px;
+  gap: 4px 22px;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 2px 4px;
   color: var(--d-muted);
   font-size: 0.85rem;
   font-weight: 500;
+  scrollbar-width: none;
+}
+
+.journey-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.journey-nav a {
+  flex: 0 0 auto;
 }
 
 .journey-nav a {
@@ -1086,14 +1122,47 @@ input {
 }
 
 footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  margin-top: 32px;
-  padding: 28px 0 36px;
+  margin-top: clamp(40px, 6vh, 64px);
+  padding: clamp(36px, 5vh, 56px) 0 36px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.88rem;
+}
+
+.footer-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px 32px;
+}
+
+.footer-heading {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.footer-columns a {
+  display: block;
+  padding: 5px 0;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.footer-columns a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  margin-top: clamp(28px, 4vh, 44px);
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 0.8rem;
 }
 
 /* ---- Live registry surface (dark showcase) ------------------------------ */
@@ -1383,9 +1452,14 @@ main:focus,
 }
 
 @media (max-width: 760px) {
+  html {
+    scroll-padding-top: 16px;
+  }
+
   .masthead {
+    position: static;
     grid-template-columns: 1fr;
-    gap: 15px;
+    gap: 10px;
   }
 
   .journey-nav,
@@ -1421,8 +1495,12 @@ main:focus,
     grid-template-columns: 1fr;
   }
 
-  footer {
-    align-items: flex-start;
+  .footer-columns {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .footer-legal {
     flex-direction: column;
   }
 }
