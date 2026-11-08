@@ -1,83 +1,93 @@
 # CommonsOps
 
-> CommonsOps pays for recurring public work with proof. A NEAR smart-contract
-> registry tracks recurring work cycles, binds the claimant to the payout
-> recipient, freezes immutable evidence, and links one-time onchain to a
-> Sputnik DAO proposal. `PAID` is derived offchain from the finalized causal
-> receipt graph of the real DAO transfer — approval alone is never payment.
-> The registry is live on NEAR testnet with a fully executed, independently
-> reviewed work cycle.
+> Work evidence and DAO payout attribution for recurring public maintenance on NEAR
+> testnet. The registry binds claimant to recipient, freezes public PR + commit
+> identity and links one Sputnik proposal. PAID is derived offchain from finalized
+> causal transfer receipts, not approval. Work quality, authorship and merge status
+> are not automatically verified.
 
-Live demo (recorded previews plus bounded live testnet reads; wallet optional):
-https://super-user-root.github.io/CommonsOps/
+Live app: https://super-user-root.github.io/CommonsOps/
+Recorded proof, no RPC: https://super-user-root.github.io/CommonsOps/#journey
+Website index: https://super-user-root.github.io/CommonsOps/llms.txt
+Canonical source: https://github.com/super-user-root/CommonsOps/blob/main/llms.txt
 
 ## Core documents
 
-- [README](README.md): product overview, live evidence table, do-X-see-Y
-  reproducible steps, claim-to-evidence map, track mapping, FAQ
-- [Testnet journey](docs/testnet-journey.md): the complete executed work
-  cycle with explorer transaction links and receipt-level verification
-- [Security findings](docs/p4-t02-findings.md): threat model, adversarial
-  review findings and dispositions, onchain failure-path demonstrations
-- [Release verification](docs/release-verification.md): why the live
-  deployment is the release candidate (three-way identical WASM)
-- [Demo guide](demo/README.md): screenshots mapped to journey steps and live
-  evidence
-- [Command reference](docs/COMMANDS.md): per-command setup, artifacts, the
-  GitHub Pages export, and the CI description
+- [README](https://github.com/super-user-root/CommonsOps/blob/main/README.md): route table, setup, shared slot, evidence and scope.
+- [Testnet journey](https://github.com/super-user-root/CommonsOps/blob/main/docs/testnet-journey.md): recorded successful transactions and causal 0.5 NEAR payout; shared slot and unsigned CLI examples.
+- [Historical findings](https://github.com/super-user-root/CommonsOps/blob/main/docs/p4-t02-findings.md): dated agent-context findings, public rationale and bounded review scope, not external audit certification.
+- [Release verification](https://github.com/super-user-root/CommonsOps/blob/main/docs/release-verification.md): exact deployed artifact and historical Windows byte-equality scope; Linux output differs.
+- [Demo guide](https://github.com/super-user-root/CommonsOps/blob/main/demo/README.md): hosted URL, screenshot inventory and honest capture provenance; X post pending human publication.
+- [Command reference](https://github.com/super-user-root/CommonsOps/blob/main/docs/COMMANDS.md): pinned toolchain/cache setup, gates, decoder, finite historical RPC, static export and CI.
 
 ## Code map
 
-- [Contract entry](contracts/registry/src/lib.rs): near-sdk registry —
-  templates, deterministic cycles, claims, immutable evidence, one-time
-  proposal links
-- [Contract domain](contracts/registry/src/domain.rs): core types and
-  validation rules
-- [Contract tests](contracts/registry/src/tests.rs): 58 Rust tests including
-  the duplicate-claim guard
-- [Domain model](packages/domain/src/index.ts): cycle/claim/evidence state
-  machine shared by all packages
-- [Proposal builder](packages/near/src/proposal-builder.ts): pinned Sputnik
-  DAO profiles and exact `act_proposal` argument construction
-- [Reconciliation engine](packages/near/src/reconciliation.ts): derives
-  `PAID` from finalized receipt graphs; fingerprinted store with
-  APPLIED / IDEMPOTENT / CONFLICT / NOT_APPLIED statuses
-- [Snapshot transport](apps/web/lib/live/rpc.ts): official testnet primary/archival
-  endpoints; max4 HTTP, 96 attempts, 6s fetch/body timeout, 40s refresh deadline;
-  pinned block hash/height validation and lossless header U64 digits; actual
-  validated endpoint provenance, duplicate-safe bounded JSON, 2 MiB stream/
-  64 KiB contract result caps and monotonic elapsed deadline checks
-- [Guarded wallet send](apps/web/lib/live/transactions.ts): generation/input/
-  snapshot/account guards rechecked after preparation awaits before signing,
-  bound signerId; no automatic transaction retry
-- [Async state controller](apps/web/lib/live/latest-task.ts): latest-input gates,
-  cancellation, stale retained data (not sendable); async behavior tests alongside
-- [Web workspace](apps/web/app/page.tsx): recorded-journey stages plus a
-  live registry section — real testnet RPC reads and user-signed
-  transactions via an NEAR wallet selector (testnet-only)
-- [Live smoke](scripts/smoke-testnet.mjs): read-only onchain deployment
-  verification against the reviewed artifact
-- [Live reconciliation](scripts/reconcile-live.mjs): read-only re-derivation
-  of the recorded payout from chain data
-- [E2E replay suite](tests/e2e/e2e-replay.test.ts): deterministic offline
-  end-to-end replay including conflict and idempotency paths
+- [Contract entry](https://github.com/super-user-root/CommonsOps/blob/main/contracts/registry/src/lib.rs): templates, deterministic cycles, claims, immutable evidence, one-time proposal links and storage collateral.
+- [Contract domain](https://github.com/super-user-root/CommonsOps/blob/main/contracts/registry/src/domain.rs): canonical input and evidence identity, not GitHub work verification.
+- [Contract tests](https://github.com/super-user-root/CommonsOps/blob/main/contracts/registry/src/tests.rs): authorization, timing, storage, claim/release/submission and replay guards.
+- [Domain model](https://github.com/super-user-root/CommonsOps/blob/main/packages/domain/src/index.ts): shared cycle/claim/evidence types and invariants.
+- [Proposal builder](https://github.com/super-user-root/CommonsOps/blob/main/packages/near/src/proposal-builder.ts): unsigned add_proposal construction for the pinned Sputnik 2.0.0 builder profile. It does not construct act_proposal approval calls; 2.3.1 request building remains unsupported.
+- [Payment verifier](https://github.com/super-user-root/CommonsOps/blob/main/packages/near/src/index.ts): separately supports the recorded Sputnik 2.3.1 payout profile; checks exact act_proposal and causal Transfer receipts.
+- [Reconciliation engine](https://github.com/super-user-root/CommonsOps/blob/main/packages/near/src/reconciliation.ts): APPLIED / IDEMPOTENT / CONFLICT / NOT_APPLIED; local fingerprint is integrity-only, not authenticity or global receipt uniqueness.
+- [Read-only transport](https://github.com/super-user-root/CommonsOps/blob/main/packages/near/src/read-only-rpc.ts): official primary/archival testnet endpoints, bounded attempts/body/JSON and monotonic deadlines, exact historical scopes and block identity checks.
+- [Browser registry reads](https://github.com/super-user-root/CommonsOps/blob/main/apps/web/lib/live/registry-reads.ts): final-block-pinned enumeration, named failures, no fixture fallback.
+- [Template selection](https://github.com/super-user-root/CommonsOps/blob/main/apps/web/lib/live/template-selection.ts): canonical contributor availability, active-claim/open-window preference and synchronous hiding/selection invalidation.
+- [Guarded wallet send](https://github.com/super-user-root/CommonsOps/blob/main/apps/web/lib/live/transactions.ts): last-await snapshot/input/current-signer checks; no automatic transaction retry.
+- [Web workspace](https://github.com/super-user-root/CommonsOps/blob/main/apps/web/app/page.tsx): short recorded tour with native disclosures, separate live registry and external operator/DAO handoffs.
+- [Historical deployment check](https://github.com/super-user-root/CommonsOps/blob/main/scripts/smoke-testnet.mjs): exact recorded transaction, init block and deployed WASM checks.
+- [Historical reconciliation](https://github.com/super-user-root/CommonsOps/blob/main/scripts/reconcile-live.mjs): re-derives fixed recorded payout expectations, not newly discovered registry linkage.
+- [E2E replay](https://github.com/super-user-root/CommonsOps/blob/main/tests/e2e/e2e-replay.test.ts): deterministic recorded payout, reuse conflicts, idempotency and convergence.
+- [Checked view decoder](https://github.com/super-user-root/CommonsOps/blob/main/tests/decode-rpc-view.ts): curl stdin envelope/UTF-8 byte-array validation, decoded JSON or nonzero failure.
 
-## Verify (offline or read-only)
+## Verification routes
 
-- `pnpm install --frozen-lockfile && pnpm verify:offline` — format checks,
-  strict TypeScript and current unit suites (counts printed by the runner),
-  Rust contract tests, production build, release-WASM checks, loopback HTTP smoke
-- `node scripts/smoke-testnet.mjs commonsops.testnet` — live onchain
-  deployment equals the reviewed artifact (exit 0; throws on any mismatch)
-- `node scripts/reconcile-live.mjs` — re-derives the recorded payout to
-  APPLIED / PAID from live chain data
+Set up Node 24.18.0, pnpm 11.25.0, Rust 1.98.0, rustfmt and wasm32-unknown-unknown.
+Windows requires Visual Studio C++ build tools. Setup needs network access:
 
-## Boundaries
+    pnpm install --frozen-lockfile
+    cargo +1.98.0 fetch --locked --manifest-path contracts/registry/Cargo.toml
+    pnpm verify:offline
+    node --test tests/e2e/e2e-replay.test.ts
 
-- No token, no custody, no AI-driven approval, no cross-chain payments, no
-  autonomous scheduler. Governance and treasury stay entirely inside the
-  Sputnik DAO; payouts are never simulated in-app. The web workspace
-  performs live testnet reads and user-signed transactions through the
-  connected wallet (testnet-only, no keys in app code); recorded-journey
-  stages render the exact recorded onchain data.
-- Network: NEAR testnet only. License: MIT.
+The ordinary native-Windows gate requires no drive mapping. Current suite counts
+come from the runner. Controller/source/HTML tests are not browser focus/layout or
+wallet-signing evidence. Fresh WASM gets structural/API checks; historical tests
+use the checked immutable deployed fixture, never substitute arbitrary host bytes.
+
+Historical, read-only, provider-dependent commands (no wallet or artifact writes):
+
+    node scripts/smoke-testnet.mjs commonsops.testnet --stdout-only
+    node scripts/reconcile-live.mjs --stdout-only
+
+Success includes outer runProvenance; failure exits 1 with FAILED JSON on stderr.
+The unchanged recorded snapshot fingerprint is
+f1eed9bbbb82e63c2f96a5321b53dd85b9e7395bd54f556a93eccd8482719965.
+Finite primary/archival retries do not promise uptime; recorded proof/replay is
+not relabelled as fresh RPC success.
+
+## Boundaries and provenance
+
+- One global shared demo slot 2:0; first claimant occupies it. Only the active
+  claimant can release before immutable evidence submission. No guaranteed payout.
+  Availability follows the last verified block; recorded proof and offline replay
+  are repeatable regardless of slot or network availability.
+- No custody of DAO payout funds. Sputnik governs its treasury; registry storage
+  collateral is retained, including excess, without a refund path.
+- Source identity is a public PR/SHA reference, not authorship, merged status or
+  quality proof. Public security fixes only after coordinated disclosure; no
+  confidential vulnerability-report intake.
+- Testnet only. Mainnet is refused in code and requires code/configuration,
+  artifact/profile and operational validation. No keys in app code.
+- foundation_status is legacy scaffold text, not business-state proof or evidence
+  that lifecycle logic is missing.
+- Deployed Windows artifact: 261226 bytes, SHA-256
+  9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c.
+  Linux local build: 261082 bytes, SHA-256
+  17266c2ad8f0da768dc8716730cf3ef70157ebe8fe62973d6259e195856300c7.
+  Historical Windows clone/worktree equality does not imply cross-platform byte
+  identity or behavioral equivalence; deployed pins remain exact.
+- No token, AI approval, autonomous scheduler, generalized live payout indexer,
+  new treasury, reputation system, Trezu integration or cross-chain payment.
+  Human X publication, consent/submission and hosting retention are separate gates.
+- License MIT; Social Money (social); AI assistance and baseline inputs disclosed
+  in README. This canonical file is served unchanged by the forced-static website route.

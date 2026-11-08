@@ -6,9 +6,8 @@
 // submitted transactions with explorer links. No simulated success, no
 // fabricated data, and the DAO payout flow stays out of the app.
 //
-// Every registered template is enumerated (sequential ids until the registry
-// returns none, capped); each template gets its own card group and its own
-// wallet-signed contributor actions bound to that template's live cycles.
+// Every registered template has a compact summary. One selected group exposes
+// its full live detail/actions; selection changes invalidate pending preparation.
 
 import {
   useCallback,
@@ -19,6 +18,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import { LatestTask } from "../../lib/live/latest-task.ts";
+import {
+  deriveTemplateAvailability,
+  preferredTemplate,
+  TemplateSelection,
+  type TemplateAvailability,
+} from "../../lib/live/template-selection.ts";
 import type { Evidence } from "@commonsops/domain";
 import {
   contributorCycleIntent,
@@ -116,6 +121,20 @@ export function LiveRegistrySection({
   );
   const evidence = useMemo(() => new TransactionEvidence(), []);
   const snapshotAuthority = useMemo(() => new SendAuthority(), []);
+  const selection = useMemo(() => new TemplateSelection(), []);
+  const summaries = useMemo(
+    () => new LatestTask<readonly TemplateAvailability[]>(),
+    [],
+  );
+  useSyncExternalStore(
+    summaries.subscribe,
+    summaries.getSnapshot,
+    summaries.getSnapshot,
+  );
+  const [choice, setChoice] = useState<{
+    scope: string;
+    id: string | null;
+  } | null>(null);
   const [, evidenceVersion] = useState(0);
   const recordRequest = useCallback(
     (key: string, state: LiveRequestState) => {
@@ -127,13 +146,6 @@ export function LiveRegistrySection({
 
   const config = useMemo(() => assertTestnet("testnet"), []);
   const trackRef = useRef<HTMLDivElement | null>(null);
-
-  // Carousel paging for the mobile template track: one group per swipe.
-  const scrollTrack = useCallback((direction: 1 | -1) => {
-    const track = trackRef.current;
-    if (!track) return;
-    track.scrollBy({ left: direction * track.clientWidth, behavior: "smooth" });
-  }, []);
 
   const refresh = useCallback(() => {
     snapshotAuthority.invalidate(); // Synchronous, before React publishes loading.
@@ -183,6 +195,65 @@ export function LiveRegistrySection({
     return null;
   }, [snapshot]);
 
+  const summaryKey = JSON.stringify([snapshot, wallet.accountId]);
+  const selectionScope = JSON.stringify([registryAccountId, wallet.accountId]);
+  useEffect(() => {
+    if (!snapshot) {
+      summaries.cancel();
+      return;
+    }
+    void summaries.run(summaryKey, () =>
+      Promise.all(
+        snapshot.templates.map((read) =>
+          deriveTemplateAvailability(
+            read,
+            snapshot.block.timestampNs,
+            wallet.accountId,
+          ),
+        ),
+      ),
+    );
+    return () => summaries.cancel();
+  }, [summaries, snapshot, summaryKey, wallet.accountId]);
+  useEffect(() => () => selection.dispose(), [selection]);
+  const availability = summaries.current(summaryKey);
+  const selectedId =
+    choice?.scope === selectionScope &&
+    (choice.id === null ||
+      snapshot?.templates.some((read) => read.templateId === choice.id))
+      ? choice.id
+      : preferredTemplate(availability ?? []);
+  const selectedRead = snapshot?.templates.find(
+    (read) => read.templateId === selectedId,
+  );
+  const selectedAvailability = availability?.find(
+    (entry) => entry.templateId === selectedId,
+  );
+  // Also invalidate during render when a snapshot/account change removes or
+  // replaces the selected detail. Event-driven hiding invalidates even earlier.
+  selection.select(selectedRead && selectedAvailability ? selectedId : null);
+  const chooseTemplate = (id: string | null) => {
+    selection.select(id); // Synchronous: never wait for React to hide the old group.
+    setChoice({ scope: selectionScope, id });
+  };
+  const pageTemplate = (direction: 1 | -1) => {
+    const list = snapshot?.templates ?? [];
+    if (!list.length) return;
+    const current = list.findIndex((read) => read.templateId === selectedId);
+    const index = (current + direction + list.length) % list.length;
+    chooseTemplate(list[index]!.templateId);
+    const track = trackRef.current;
+    const item = track?.children[index];
+    if (track && item)
+      track.scrollTo({
+        left:
+          track.scrollLeft +
+          item.getBoundingClientRect().left -
+          track.getBoundingClientRect().left,
+        behavior: "smooth",
+      });
+  };
+
   return (
     <section
       className="live-section section-shell"
@@ -197,18 +268,9 @@ export function LiveRegistrySection({
           <h2 id="live-registry-heading">Live registry, same rules.</h2>
         </div>
         <p>
-          This section reads the deployed registry{" "}
-          <code>{registryAccountId}</code> directly from your browser via
-          read-only JSON-RPC at NEAR testnet final blocks — no wallet needed.
-          Every registered template is enumerated, each with its latest existing
-          cycle and its next period. Connect a testnet wallet and each active
-          template's contributor actions become sendable: your wallet signs, the
-          transaction goes to the registry, and the result links to the
-          explorer. The DAO payout flow stays outside this app (see{" "}
-          <a href="https://github.com/super-user-root/CommonsOps/blob/main/docs/testnet-journey.md">
-            docs/testnet-journey.md
-          </a>
-          ).
+          Read <code>{registryAccountId}</code> at a final testnet block without
+          a wallet. Select a template for details and contributor actions. Your
+          wallet signs; the operator and DAO govern outside this app.
         </p>
       </div>
 
@@ -223,16 +285,21 @@ export function LiveRegistrySection({
           <h3>Live registry read unavailable</h3>
           <p>
             Official NEAR testnet RPC could not verify this refresh (
-            {readFailure.code}). Check your connection or try again. No fallback
-            data is shown.
+            {readFailure.code}). {readFailure.message} Check your connection or
+            try again. No fallback data is shown.
           </p>
-          <button
-            className="button primary"
-            type="button"
-            onClick={() => void refresh()}
-          >
-            Retry
-          </button>
+          <div className="live-recovery-actions">
+            <a className="button secondary" href="#journey">
+              View recorded testnet evidence — not a live result
+            </a>
+            <button
+              className="button primary"
+              type="button"
+              onClick={() => void refresh()}
+            >
+              Retry
+            </button>
+          </div>
         </div>
       ) : null}
       <div className="live-meta" role="status" aria-live="polite">
@@ -246,26 +313,36 @@ export function LiveRegistrySection({
           </p>
         ) : null}
         {snapshot ? (
-          <>
+          <div className="live-source">
             <p>
               Observed final block{" "}
               <span className="exact-value">{snapshot.block.height}</span> at{" "}
-              <span className="exact-value">
-                {snapshot.block.timestampNs} ns
-              </span>{" "}
-              ({nsToDate(snapshot.block.timestampNs)}). Validated read
+              {nsToDate(snapshot.block.timestampNs)}. Validated read
               endpoint(s):{" "}
               <code>
                 {snapshot.endpoints.join(", ") || "provenance unavailable"}
               </code>
-              . Foundation status: <code>{snapshot.foundationStatus}</code>
+              . Availability is at this block, not a reservation or payout
+              guarantee.
               {snapshot.enumerationStop === "COMPLETE"
                 ? ""
                 : snapshot.enumerationStop === "CAPPED"
-                  ? " — template enumeration stopped at the cap; more templates may exist onchain."
-                  : " — template discovery interrupted by a template error; later IDs were not read."}
+                  ? " Template enumeration stopped at the cap; more templates may exist onchain."
+                  : " Template discovery interrupted by a template error; later IDs were not read."}
             </p>
-          </>
+            <details className="proof-details">
+              <summary>Exact block and legacy contract marker</summary>
+              <p>
+                Block hash: <code>{snapshot.block.hash}</code>. Timestamp:{" "}
+                <code>{snapshot.block.timestampNs} ns</code>.
+              </p>
+              <p>
+                Foundation status: <code>{snapshot.foundationStatus}</code>.
+                This is a legacy scaffold literal, not a business-state check or
+                a claim that the deployed lifecycle is missing.
+              </p>
+            </details>
+          </div>
         ) : null}
         {!readFailure ? (
           <button
@@ -279,17 +356,37 @@ export function LiveRegistrySection({
         ) : null}
       </div>
 
+      <aside className="shared-slot-notice" aria-label="Shared demo slot">
+        <p>
+          <strong>Cycle 2:0 is one global shared slot.</strong> The first
+          claimant occupies it. Only their active, unsubmitted claim can be
+          released; immutable evidence submission prevents release. No
+          guaranteed DAO payout.
+        </p>
+        <p>
+          Slot occupied or RPC unavailable?{" "}
+          <a href="#journey">Recorded proof</a> and{" "}
+          <code>node --test tests/e2e/e2e-replay.test.ts</code> are repeatable
+          without a wallet or an available cycle.
+          <a href="https://github.com/super-user-root/CommonsOps/blob/main/docs/testnet-journey.md#shared-demo-slot">
+            {" "}
+            Read the shared-slot and release guide.
+          </a>
+        </p>
+      </aside>
+
       {snapshot ? (
         <>
           <div className="live-track-nav">
-            <span className="live-track-hint" aria-hidden="true">
-              One template per swipe
+            <span className="live-track-hint">
+              Select a template · swipe summaries on mobile
             </span>
             <button
               className="button secondary"
               type="button"
               aria-label="Previous template group"
-              onClick={() => scrollTrack(-1)}
+              disabled={!snapshot.templates.length}
+              onClick={() => pageTemplate(-1)}
             >
               ‹
             </button>
@@ -297,7 +394,8 @@ export function LiveRegistrySection({
               className="button secondary"
               type="button"
               aria-label="Next template group"
-              onClick={() => scrollTrack(1)}
+              disabled={!snapshot.templates.length}
+              onClick={() => pageTemplate(1)}
             >
               ›
             </button>
@@ -305,91 +403,161 @@ export function LiveRegistrySection({
           <div
             className="live-template-track"
             role="region"
-            aria-label="Live registry templates, one group per swipe"
+            aria-label="Live registry templates, one summary per swipe"
             tabIndex={0}
             ref={trackRef}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                pageTemplate(event.key === "ArrowRight" ? 1 : -1);
+              }
+            }}
           >
-            {snapshot.templates.map((read) =>
-              read.kind === "READY" ? (
-                <LiveTemplateGroup
-                  key={read.templateId}
-                  read={read}
-                  registryAccountId={registryAccountId}
-                  observedBlockTimestampNs={snapshot.block.timestampNs}
-                  fresh={fresh}
-                  snapshotAuthority={snapshotAuthority}
-                  evidence={evidence}
-                  recordRequest={recordRequest}
-                  onSent={() => void refresh()}
-                />
-              ) : (
+            {snapshot.templates.map((read) => {
+              const summary = availability?.find(
+                (entry) => entry.templateId === read.templateId,
+              );
+              return (
                 <article
-                  className="live-card live-template-error"
+                  className="live-card live-template-summary"
                   key={read.templateId}
-                  role={fresh ? "alert" : undefined}
                 >
-                  <h3>Template {read.templateId} — read failed</h3>
+                  <h3 id={`live-template-${read.templateId}-heading`}>
+                    Template {read.templateId}
+                    {read.kind === "READY"
+                      ? ` — ${read.template.input.title}`
+                      : " — read failed"}
+                  </h3>
                   <p>
-                    {read.code}: {read.message} No cycle availability is
-                    inferred from failed reads. Other verified template groups
-                    may still be shown; re-read the live state to try again.
+                    {!fresh ? "Stale — signing disabled. " : ""}
+                    {summary?.label ?? "Checking cycle availability…"}
                   </p>
+                  {summary?.view ? (
+                    <p>
+                      {cycleHeading(summary.view.cycle)} ·{" "}
+                      {formatYoctoNearExact(
+                        summary.view.cycle.amount_yocto,
+                      ).replace(/\.?(0+) NEAR$/, " NEAR")}
+                    </p>
+                  ) : null}
+                  {read.kind === "ERROR" ? (
+                    <p role={fresh ? "alert" : undefined}>
+                      {read.code}: {read.message} No cycle availability is
+                      inferred from failed reads.
+                    </p>
+                  ) : null}
+                  {summary?.error && read.kind === "READY" ? (
+                    <p role={fresh ? "alert" : undefined}>{summary.error}</p>
+                  ) : null}
+                  <button
+                    className="button secondary"
+                    type="button"
+                    aria-expanded={selectedId === read.templateId}
+                    aria-controls="live-selected-template"
+                    onClick={() =>
+                      chooseTemplate(
+                        selectedId === read.templateId ? null : read.templateId,
+                      )
+                    }
+                  >
+                    {selectedId === read.templateId ? "Hide" : "View"} template{" "}
+                    {read.templateId} details
+                  </button>
                 </article>
-              ),
+              );
+            })}
+          </div>
+          <div id="live-selected-template">
+            {selectedRead?.kind === "READY" && selectedAvailability ? (
+              <LiveTemplateGroup
+                key={selectedRead.templateId}
+                read={selectedRead}
+                availability={selectedAvailability}
+                selection={selection}
+                registryAccountId={registryAccountId}
+                observedBlockTimestampNs={snapshot.block.timestampNs}
+                fresh={fresh}
+                snapshotAuthority={snapshotAuthority}
+                evidence={evidence}
+                recordRequest={recordRequest}
+                onSent={() => void refresh()}
+              />
+            ) : selectedRead?.kind === "ERROR" ? (
+              <p>
+                Template {selectedRead.templateId} could not be verified.
+                Re-read the live state to try again; other summaries remain
+                accessible.
+              </p>
+            ) : (
+              <p>
+                {snapshot.templates.length
+                  ? "Select a template to inspect its live details and actions."
+                  : "No registered templates were returned at this final block."}
+              </p>
             )}
           </div>
         </>
       ) : null}
 
-      <article
-        className="live-card"
-        aria-label="Transaction evidence from this browser"
-      >
-        <h3>Transaction evidence from this browser</h3>
-        <p>
-          Wallet-reported sends are retained across refreshes, including
-          template read failures. They do not certify execution success or DAO
-          payment.
-        </p>
-        {evidence.records().map((record, index) => (
-          <p key={`${record.transactionHash}-${index}`}>
-            <a href={record.explorerUrl} target="_blank" rel="noreferrer">
-              {record.method}: {record.transactionHash}
-            </a>
+      {evidence.records().length ? (
+        <article
+          className="live-card"
+          aria-label="Transaction evidence from this browser"
+        >
+          <h3>Transaction evidence from this browser</h3>
+          <p>
+            Wallet-reported sends are retained across refreshes, including
+            template read failures. They do not certify execution success or DAO
+            payment.
           </p>
-        ))}
-      </article>
+          {evidence.records().map((record, index) => (
+            <p key={`${record.transactionHash}-${index}`}>
+              <a href={record.explorerUrl} target="_blank" rel="noreferrer">
+                {record.method}: {record.transactionHash}
+              </a>
+            </p>
+          ))}
+        </article>
+      ) : null}
 
-      <div className="live-grid">
+      <div className="live-grid live-handoffs">
         <article className="live-card" aria-labelledby="live-operator-heading">
           <h3 id="live-operator-heading">Operator methods — display-only</h3>
           <p>
-            <code>create_template</code>, <code>materialize_cycle</code>,{" "}
-            <code>set_template_active</code>, <code>skip_expired_periods</code>{" "}
-            and <code>link_proposal</code> belong to the registry manager ({" "}
-            {managerId ?? "onchain manager"}). They stay display-only in this
-            workspace; the contract enforces manager authorization onchain
-            regardless of what any UI offers.
+            The operator provisions work outside this app; the contract enforces
+            manager authorization.
           </p>
-          {wallet.accountId && managerId ? (
+          <details className="proof-details">
+            <summary>Manager methods and connected-account role</summary>
             <p>
-              {wallet.accountId === managerId
-                ? "The connected account is the registry manager. These methods still stay display-only in this workspace."
-                : "The connected account is not the registry manager."}
+              <code>create_template</code>, <code>materialize_cycle</code>,{" "}
+              <code>set_template_active</code>,{" "}
+              <code>skip_expired_periods</code> and <code>link_proposal</code>{" "}
+              belong to the registry manager ( {managerId ?? "onchain manager"}
+              ). They stay display-only in this workspace; the contract enforces
+              manager authorization onchain regardless of what any UI offers.
             </p>
-          ) : null}
+            {wallet.accountId && managerId ? (
+              <p>
+                {wallet.accountId === managerId
+                  ? "The connected account is the registry manager. These methods still stay display-only in this workspace."
+                  : "The connected account is not the registry manager."}
+              </p>
+            ) : null}
+          </details>
         </article>
 
         <article className="live-card" aria-labelledby="live-dao-heading">
           <h3 id="live-dao-heading">DAO payout — not in this app</h3>
           <p>
-            The Sputnik DAO keeps custody and approves payouts inside its own
-            governance. CommonsOps never holds funds and this app never
-            simulates a payout: a DAO member creates the transfer proposal in
-            the DAO, and the registry links it one-time onchain. The recorded
-            end-to-end payout is documented in{" "}
-            <code>docs/testnet-journey.md</code> and rendered as the recorded
-            reviewer stage below.
+            The Sputnik DAO keeps custody of payout funds and decides payment.
+            CommonsOps retains storage collateral, not a payout treasury. A
+            proposal link or an approval is not proof of payment. See the{" "}
+            <a href="https://github.com/super-user-root/CommonsOps/blob/main/docs/testnet-journey.md">
+              recorded journey in docs/testnet-journey.md
+            </a>
+            .
           </p>
         </article>
       </div>
@@ -399,6 +567,8 @@ export function LiveRegistrySection({
 
 function LiveTemplateGroup({
   read,
+  availability,
+  selection,
   registryAccountId,
   observedBlockTimestampNs,
   fresh,
@@ -408,6 +578,8 @@ function LiveTemplateGroup({
   onSent,
 }: {
   read: Extract<LiveTemplateRead, { kind: "READY" }>;
+  availability: TemplateAvailability;
+  selection: TemplateSelection;
   registryAccountId: string;
   observedBlockTimestampNs: string;
   fresh: boolean;
@@ -430,12 +602,9 @@ function LiveTemplateGroup({
   const template = read.template;
   const templateId = read.templateId;
   const paused = read.paused;
-  // The actions target this template's newest live cycle: the next period's
-  // cycle once materialized (e.g. the judge-demo 2:0 OPEN), otherwise the
-  // latest existing one.
-  const actionableCycle = paused
-    ? null
-    : (read.nextCycle?.cycle ?? read.latestCycle?.cycle ?? null);
+  // Shared summary selection uses canonical derivation: prefer the connected
+  // active claim, then an actual open/in-window cycle, else the newest read.
+  const actionableCycle = availability.view?.cycle ?? null;
 
   const contextKey = JSON.stringify([
     registryAccountId,
@@ -541,9 +710,10 @@ function LiveTemplateGroup({
       evidence.get(key).status === "PENDING"
     )
       return;
+    const selectionToken = selection.capture(templateId, gate.accountId);
     const snapshotToken = snapshotAuthority.capture(
       gate.accountId,
-      () => sendGate.current.fresh,
+      () => selectionToken.valid() && sendGate.current.fresh,
     );
     const token = inputAuthority.capture(
       gate.accountId,
@@ -579,116 +749,121 @@ function LiveTemplateGroup({
       className="live-template-group"
       aria-labelledby={`live-template-${templateId}-heading`}
     >
-      <div className="live-grid">
-        <article
-          className="live-card"
-          aria-labelledby={`live-template-${templateId}-heading`}
-        >
-          <h3 id={`live-template-${templateId}-heading`}>
-            Template {template.id} — {template.input.title}
-            {paused ? " (paused)" : ""}
-          </h3>
-          <p>{template.input.description}</p>
-          <dl className="live-facts">
-            <div>
-              <dt>Manager (operator)</dt>
-              <dd>{template.manager_id}</dd>
-            </div>
-            <div>
-              <dt>Active</dt>
-              <dd>{template.active ? "yes" : "no"}</dd>
-            </div>
-            <div>
-              <dt>DAO (payout approver)</dt>
-              <dd>{template.input.dao_account_id}</dd>
-            </div>
-            <div>
-              <dt>Payout per cycle</dt>
-              <dd>
-                {template.input.amount_yocto} yoctoNEAR{" "}
-                <small>
-                  ({formatYoctoNearExact(template.input.amount_yocto)})
-                </small>
-              </dd>
-            </div>
-            <div>
-              <dt>Interval</dt>
-              <dd>{template.input.interval_ns} ns</dd>
-            </div>
-            <div>
-              <dt>Work window</dt>
-              <dd>{template.input.work_window_ns} ns</dd>
-            </div>
-            <div>
-              <dt>Claim duration</dt>
-              <dd>{template.input.claim_duration_ns} ns</dd>
-            </div>
-            <div>
-              <dt>Next period to materialize</dt>
-              <dd>{template.next_period_index}</dd>
-            </div>
-          </dl>
-        </article>
-
-        {paused ? (
+      <details className="proof-details">
+        <summary>
+          Template {templateId} — exact schedule, storage and cycle evidence
+        </summary>
+        <div className="live-grid">
           <article
             className="live-card"
-            aria-labelledby={`live-paused-${templateId}-heading`}
+            aria-labelledby={`live-template-${templateId}-detail-heading`}
           >
-            <h3 id={`live-paused-${templateId}-heading`}>Paused template</h3>
-            <p>
-              This template is paused onchain, so its cycles were not read and
-              it offers no contributor actions here. The registry manager can
-              resume it; re-read the live state after that to see its cycles.
-            </p>
+            <h3 id={`live-template-${templateId}-detail-heading`}>
+              Template {template.id} — {template.input.title}
+              {paused ? " (paused)" : ""}
+            </h3>
+            <p>{template.input.description}</p>
+            <dl className="live-facts">
+              <div>
+                <dt>Manager (operator)</dt>
+                <dd>{template.manager_id}</dd>
+              </div>
+              <div>
+                <dt>Active</dt>
+                <dd>{template.active ? "yes" : "no"}</dd>
+              </div>
+              <div>
+                <dt>DAO (payout approver)</dt>
+                <dd>{template.input.dao_account_id}</dd>
+              </div>
+              <div>
+                <dt>Payout per cycle</dt>
+                <dd>
+                  {template.input.amount_yocto} yoctoNEAR{" "}
+                  <small>
+                    ({formatYoctoNearExact(template.input.amount_yocto)})
+                  </small>
+                </dd>
+              </div>
+              <div>
+                <dt>Interval</dt>
+                <dd>{template.input.interval_ns} ns</dd>
+              </div>
+              <div>
+                <dt>Work window</dt>
+                <dd>{template.input.work_window_ns} ns</dd>
+              </div>
+              <div>
+                <dt>Claim duration</dt>
+                <dd>{template.input.claim_duration_ns} ns</dd>
+              </div>
+              <div>
+                <dt>Next period to materialize</dt>
+                <dd>{template.next_period_index}</dd>
+              </div>
+            </dl>
           </article>
-        ) : (
-          <>
-            <article
-              className="live-card"
-              aria-labelledby={`live-latest-${templateId}-heading`}
-            >
-              <h3 id={`live-latest-${templateId}-heading`}>
-                {read.latestCycle
-                  ? read.latestCycle.cycle
-                    ? cycleHeading(read.latestCycle.cycle)
-                    : `Period ${read.latestCycle.periodIndex}`
-                  : "No earlier cycle"}
-              </h3>
-              {read.latestCycle?.cycle ? (
-                <LiveCycleFacts cycle={read.latestCycle.cycle} />
-              ) : (
-                <p>
-                  {read.latestCycle
-                    ? `No cycle exists for period ${read.latestCycle.periodIndex} (it may have been skipped).`
-                    : "No period of this template has been materialized yet."}
-                </p>
-              )}
-            </article>
 
+          {paused ? (
             <article
               className="live-card"
-              aria-labelledby={`live-next-${templateId}-heading`}
+              aria-labelledby={`live-paused-${templateId}-heading`}
             >
-              <h3 id={`live-next-${templateId}-heading`}>
-                {read.nextCycle?.cycle
-                  ? cycleHeading(read.nextCycle.cycle)
-                  : `Period ${read.template.next_period_index}`}
-              </h3>
-              {read.nextCycle?.cycle ? (
-                <LiveCycleFacts cycle={read.nextCycle.cycle} />
-              ) : (
-                <p>
-                  No cycle for period {read.template.next_period_index} yet —
-                  nothing new is claimable on this template right now. The
-                  registry operator materializes the next due period onchain;
-                  this view re-reads the registry and will show it here.
-                </p>
-              )}
+              <h3 id={`live-paused-${templateId}-heading`}>Paused template</h3>
+              <p>
+                This template is paused onchain, so its cycles were not read and
+                it offers no contributor actions here. The registry manager can
+                resume it; re-read the live state after that to see its cycles.
+              </p>
             </article>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <article
+                className="live-card"
+                aria-labelledby={`live-latest-${templateId}-heading`}
+              >
+                <h3 id={`live-latest-${templateId}-heading`}>
+                  {read.latestCycle
+                    ? read.latestCycle.cycle
+                      ? cycleHeading(read.latestCycle.cycle)
+                      : `Period ${read.latestCycle.periodIndex}`
+                    : "No earlier cycle"}
+                </h3>
+                {read.latestCycle?.cycle ? (
+                  <LiveCycleFacts cycle={read.latestCycle.cycle} />
+                ) : (
+                  <p>
+                    {read.latestCycle
+                      ? `No cycle exists for period ${read.latestCycle.periodIndex} (it may have been skipped).`
+                      : "No period of this template has been materialized yet."}
+                  </p>
+                )}
+              </article>
+
+              <article
+                className="live-card"
+                aria-labelledby={`live-next-${templateId}-heading`}
+              >
+                <h3 id={`live-next-${templateId}-heading`}>
+                  {read.nextCycle?.cycle
+                    ? cycleHeading(read.nextCycle.cycle)
+                    : `Period ${read.template.next_period_index}`}
+                </h3>
+                {read.nextCycle?.cycle ? (
+                  <LiveCycleFacts cycle={read.nextCycle.cycle} />
+                ) : (
+                  <p>
+                    No cycle for period {read.template.next_period_index} yet —
+                    nothing new is claimable on this template right now. The
+                    registry operator materializes the next due period onchain;
+                    this view re-reads the registry and will show it here.
+                  </p>
+                )}
+              </article>
+            </>
+          )}
+        </div>
+      </details>
 
       {paused ? null : (
         <article
@@ -733,8 +908,9 @@ function LiveTemplateGroup({
             </p>
           ) : !actionableCycle ? (
             <p>
-              No cycle of this template can be acted on yet — the actions appear
-              once a cycle exists.
+              No cycle is available for actions in this app.{" "}
+              {availability.label}.
+              {availability.error ? ` ${availability.error}` : ""}
             </p>
           ) : !wallet.accountId ? (
             <>
@@ -747,7 +923,7 @@ function LiveTemplateGroup({
               <button
                 className="button primary"
                 type="button"
-                onClick={() => void wallet.connect()}
+                onClick={(event) => void wallet.connect(event.currentTarget)}
               >
                 Connect testnet wallet
               </button>
@@ -767,7 +943,9 @@ function LiveTemplateGroup({
                 {derived.view.lifecycle.toLowerCase()} at the observed final
                 block). Availability follows the reviewed construction; the
                 contract enforces the rest onchain. Zero attached deposit on
-                every contributor method.
+                every contributor method; network gas still costs testnet NEAR
+                (100 TGas prepaid). Submission is immutable and prevents
+                release.
               </p>
               <div className="live-action-grid">
                 {CONTRIBUTOR_METHODS.map((method) => {
@@ -932,8 +1110,8 @@ function LiveCycleFacts({
       {cycle.proposal_link ? (
         <p className="live-status-line">
           Submitted evidence and payout recipient are immutable on this
-          onchain-submitted cycle; the DAO payout is recorded in{" "}
-          <code>docs/testnet-journey.md</code>.
+          onchain-submitted cycle. Its proposal link does not establish payment;
+          finalized causal payout receipts must be independently verified.
         </p>
       ) : null}
     </>

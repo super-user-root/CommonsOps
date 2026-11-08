@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
@@ -88,13 +89,26 @@ try {
     /<button[^>]*disabled/.test(html),
     "Recorded intent previews must render disabled",
   );
+  assert.match(html, /href="\/llms\.txt"/);
+  const indexResponse = await fetch(`${url}/llms.txt`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(indexResponse.status, 200);
+  assert.match(
+    indexResponse.headers.get("content-type") ?? "",
+    /^text\/plain(?:;|$)/i,
+  );
+  assert.deepEqual(
+    Buffer.from(await indexResponse.arrayBuffer()),
+    await readFile(new URL("../llms.txt", import.meta.url)),
+  );
   assert.equal(
     (await fetch(`${url}/not-a-route`, { signal: AbortSignal.timeout(5000) }))
       .status,
     404,
   );
   console.log(
-    "PASS production HTTP smoke: testnet workspace, live surface, metadata, 404",
+    "PASS production HTTP smoke: testnet workspace, live surface, metadata, canonical AI index bytes/content-type, 404",
   );
 } finally {
   server.kill();

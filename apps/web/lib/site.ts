@@ -3,7 +3,7 @@ import { foundationMetadata } from "@commonsops/domain";
 export const siteMetadata = Object.freeze({
   title: `${foundationMetadata.name} | Testnet workspace`,
   description:
-    "A testnet-first workspace for recurring community documentation maintenance with an existing NEAR Sputnik DAO. The live registry section reads the deployed testnet registry over read-only RPC, and a connected wallet signs its own transactions; CommonsOps never holds keys or funds and the DAO keeps payouts.",
+    "Work evidence and DAO payout attribution for recurring public maintenance on NEAR testnet. Recorded proof is separate from live reads and wallet-signed contributor actions. No keys in app code. The DAO keeps payout funds; the registry retains storage collateral. No automatic work-quality verification.",
   stage: "live testnet workspace" as const,
   liveData: true,
   transactions: true,

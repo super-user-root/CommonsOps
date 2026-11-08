@@ -24,6 +24,8 @@ export default async function HomePage() {
   if (!registryAccountId) {
     throw new Error("ERR_TESTNET_REGISTRY_UNCONFIGURED");
   }
+  const basePath =
+    process.env.COMMONSOPS_STATIC_EXPORT === "1" ? "/CommonsOps" : "";
 
   return (
     <LiveWalletProvider>
@@ -82,19 +84,17 @@ export default async function HomePage() {
             <em>Verify the payout.</em>
           </h1>
           <p className="intro">
-            CommonsOps coordinates recurring public work — documentation,
-            triage, security fixes — freezes contributor evidence on NEAR, and
-            keeps approval and funds inside an existing Sputnik DAO.
+            Work evidence and DAO payout attribution for recurring public
+            maintenance. Bind a claim, freeze a public PR reference, and trace
+            the DAO transfer on NEAR — not an automatic check of work quality.
           </p>
           <div className="hero-actions">
             <a className="button primary" href="#live-registry">
               Open the live registry
             </a>
-            <span className="microcopy">
-              The stages below stay read-only snapshots of the recorded live
-              journey. Live testnet reads and wallet-signed transactions live in
-              the live registry section.
-            </span>
+            <a className="button secondary" href="#journey">
+              See recorded payout proof
+            </a>
           </div>
           <aside
             className="fixture-banner"
@@ -108,9 +108,11 @@ export default async function HomePage() {
                 Recorded live journey · NEAR testnet
               </h2>
               <p>
-                {journey.provenance.notice} Values are the exact recorded
-                onchain data, imported in place. No clock, random value, or
-                GitHub request is used.
+                <strong>
+                  0.5 NEAR payout verified from recorded receipts.
+                </strong>{" "}
+                Three frozen stages below, not a current live result. No wallet
+                or RPC needed for this proof.
               </p>
             </div>
           </aside>
@@ -125,36 +127,42 @@ export default async function HomePage() {
             <p className="eyebrow">Connection boundary</p>
             <h2 id="network-heading">Choose evidence, not assumptions.</h2>
             <p>
-              Testnet and mainnet remain separate configurations. The CommonsOps
-              registry is deployed on testnet (
-              {networkConfigs.TESTNET.registryAccountId}): the live section
-              below reads it over read-only RPC at final blocks, and connected
-              wallets sign their own transactions. Mainnet stays isolated and
-              unconfigured; mainnet attempts are refused in code.
+              Live reads use NEAR testnet; recorded proof stays separate.
+              CommonsOps has no custody of DAO payout funds. The registry
+              retains operator-funded storage collateral. Mainnet attempts are
+              refused in code.
             </p>
           </div>
-          <div className="network-grid" aria-label="Network configurations">
-            <article className="network-card selected">
-              <div className="card-heading">
-                <span className="dot" aria-hidden="true" />
-                Testnet
-              </div>
-              <strong>{networkConfigs.TESTNET.registryAccountId}</strong>
-              <p>{networkConfigs.TESTNET.rpcUrl}</p>
-              <span className="pill">
-                Registry deployed · live reads + wallet-signed transactions
-              </span>
-            </article>
-            <article className="network-card muted-card">
-              <div className="card-heading">
-                <span className="dot muted" aria-hidden="true" />
-                Mainnet
-              </div>
-              <strong>{mainnetState.status}</strong>
-              <p>{networkConfigs.MAINNET.rpcUrl}</p>
-              <span className="pill">Disabled · refused in code</span>
-            </article>
-          </div>
+          <details className="proof-details">
+            <summary>Network configuration and technical boundaries</summary>
+            <p>
+              The live section reads final blocks; a connected wallet signs its
+              own contributor transactions. Mainnet requires code, configuration
+              and operational validation, not just a different RPC URL.
+            </p>
+            <div className="network-grid" aria-label="Network configurations">
+              <article className="network-card selected">
+                <div className="card-heading">
+                  <span className="dot" aria-hidden="true" />
+                  Testnet
+                </div>
+                <strong>{registryAccountId}</strong>
+                <p>{networkConfigs.TESTNET.rpcUrl}</p>
+                <span className="pill">
+                  Registry deployed · live reads + wallet-signed transactions
+                </span>
+              </article>
+              <article className="network-card muted-card">
+                <div className="card-heading">
+                  <span className="dot muted" aria-hidden="true" />
+                  Mainnet
+                </div>
+                <strong>{mainnetState.status}</strong>
+                <p>{networkConfigs.MAINNET.rpcUrl}</p>
+                <span className="pill">Disabled · refused in code</span>
+              </article>
+            </div>
+          </details>
         </section>
 
         <LiveRegistrySection registryAccountId={registryAccountId} />
@@ -166,16 +174,23 @@ export default async function HomePage() {
         >
           <div className="section-intro split-intro">
             <div>
-              <p className="eyebrow">Recorded journey</p>
-              <h2 id="journey-heading">Three roles. Three frozen stages.</h2>
+              <p className="eyebrow">Recorded journey · no live RPC</p>
+              <h2 id="journey-heading">
+                One work cycle. Evidence. A verified payout.
+              </h2>
             </div>
             <p>
-              This walkthrough renders the recorded testnet journey through the
-              reviewed vertical slice. Each role receives an immutable snapshot
-              of the recorded stage; later evidence never mutates the earlier
-              operator or contributor preview.
+              Recorded outcome: <strong>0.5 NEAR, derived PAID</strong> for
+              cycle 0:0. These are separate immutable stage snapshots, not one
+              mutable live record. Expand any stage for the complete unsigned
+              intents and proof.
             </p>
           </div>
+          <nav className="stage-links" aria-label="Recorded journey stages">
+            <a href="#operator-stage">1. Define work</a>
+            <a href="#contributor-stage">2. Bind evidence</a>
+            <a href="#reviewer-stage">3. Trace payout</a>
+          </nav>
 
           <article
             className="journey-stage"
@@ -195,33 +210,36 @@ export default async function HomePage() {
                     Define the recurring work.
                   </h3>
                   <p>
-                    Registered template 0 on testnet: exact integer wire values
-                    produce unsigned create and materialize intents. These
-                    recorded stages stay immutable — the executed transactions
-                    are recorded in docs/testnet-journey.md, and today's
-                    operator methods remain display-only in the live section
-                    above.
+                    Template 0 sets a 0.5 NEAR budget per cycle. The operator
+                    registers and materializes work outside this app; the
+                    registry enforces the schedule and storage limits.
                   </p>
                 </div>
               </header>
-              <div className="panel-stack">
-                <OperatorPanel
-                  draft={journey.operator.draft}
-                  intent={createIntent}
-                  state={journey.operator.requestState}
-                  headingId="operator-create-heading"
-                  headingLevel={4}
-                  eyebrow="Recorded template 0 · Testnet"
-                />
-                <OperatorPanel
-                  draft={journey.operator.draft}
-                  intent={materializeIntent}
-                  state={journey.operator.requestState}
-                  headingId="operator-materialize-heading"
-                  headingLevel={4}
-                  eyebrow="Exact materialize preview · Testnet"
-                />
-              </div>
+              <details className="proof-details" data-recorded-proof="operator">
+                <summary>
+                  Recorded operator intents — template, schedule and storage
+                  deposits
+                </summary>
+                <div className="panel-stack">
+                  <OperatorPanel
+                    draft={journey.operator.draft}
+                    intent={createIntent}
+                    state={journey.operator.requestState}
+                    headingId="operator-create-heading"
+                    headingLevel={4}
+                    eyebrow="Recorded template 0 · Testnet"
+                  />
+                  <OperatorPanel
+                    draft={journey.operator.draft}
+                    intent={materializeIntent}
+                    state={journey.operator.requestState}
+                    headingId="operator-materialize-heading"
+                    headingLevel={4}
+                    eyebrow="Exact materialize preview · Testnet"
+                  />
+                </div>
+              </details>
             </div>
           </article>
 
@@ -243,28 +261,39 @@ export default async function HomePage() {
                     Bind the claim and evidence.
                   </h3>
                   <p>
-                    The recorded CLAIMED cycle 0:0, observed at block timestamp{" "}
-                    <span className="exact-value">
-                      {journey.contributor.observedBlockTimestampNs} ns
-                    </span>{" "}
-                    (the recorded claim block). Claimant and payout recipient
-                    are the same account; the recorded intent previews remain
-                    unsigned snapshots — the executed transactions are recorded
-                    in docs/testnet-journey.md and today's live, wallet-signed
-                    equivalents are in the live section above.
+                    Claimant becomes payout recipient. Public PR #17 and a
+                    commit SHA identify the submitted evidence — not authorship,
+                    merge status or work quality. Submission is immutable.
                   </p>
                 </div>
               </header>
-              <ContributorPanel
-                view={journey.contributor.view}
-                connectedAccountId={journey.contributor.connectedAccountId}
-                evidenceDraft={journey.contributor.evidenceDraft}
-                evidencePreview={journey.contributor.evidencePreview}
-                intents={journey.contributor.intents}
-                requestState={journey.contributor.requestState}
-                idScope="contributor-fixture"
-                headingLevel={4}
-              />
+              <details
+                className="proof-details"
+                data-recorded-proof="contributor"
+              >
+                <summary>
+                  Recorded claim and evidence — canonical SHA, timestamp and
+                  unsigned actions
+                </summary>
+                <p>
+                  Recorded CLAIMED cycle 0:0 at{" "}
+                  <span className="exact-value">
+                    {journey.contributor.observedBlockTimestampNs} ns
+                  </span>
+                  . These previews do not send; live contributor actions are in
+                  the separate live registry.
+                </p>
+                <ContributorPanel
+                  view={journey.contributor.view}
+                  connectedAccountId={journey.contributor.connectedAccountId}
+                  evidenceDraft={journey.contributor.evidenceDraft}
+                  evidencePreview={journey.contributor.evidencePreview}
+                  intents={journey.contributor.intents}
+                  requestState={journey.contributor.requestState}
+                  idScope="contributor-fixture"
+                  headingLevel={4}
+                />
+              </details>
             </div>
           </article>
 
@@ -286,48 +315,51 @@ export default async function HomePage() {
                     Trace approval to a verified payout.
                   </h3>
                   <p>
-                    This separate immutable SUBMITTED + linked cycle is paired
-                    with the recorded proposal-0 payout receipt graph — the
-                    executed transaction{" "}
-                    <span className="exact-value">
-                      {fixtureJourneyConstants.transactionHash}
-                    </span>
-                    . The canonical adapter—not browser state—derives PAID and
-                    preserves its full provenance.
+                    The existing DAO approved and transferred 0.5 NEAR. The
+                    canonical offchain adapter derives PAID from the recorded
+                    final transaction and causal receipt graph, not a browser
+                    flag. DAO review and payout remain outside this app.
                   </p>
                 </div>
               </header>
-
               <aside className="nonpayment-boundary" role="status">
                 <strong>Approved alone is not payment.</strong>
                 <span>
-                  The approved-only rendering derives{" "}
-                  <b>{journey.reviewer.approvedOnlyModel.payment.state}</b>:{" "}
-                  {journey.reviewer.approvedOnlyModel.payment.reason}
+                  Without verified receipts:{" "}
+                  <b>{journey.reviewer.approvedOnlyModel.payment.state}</b>.
+                  Failed, stale or unknown evidence is never a payout guarantee.
                 </span>
               </aside>
-
-              <ReviewerPanel
-                model={journey.reviewer.model}
-                requestState={journey.reviewer.requestState}
-                idScope="recorded-proposal-0"
-                headingLevel={4}
-              />
-
-              <p className="fixture-source-note">
-                <strong>Recorded-snapshot provenance:</strong>{" "}
-                <code>{journey.provenance.fixtureSource}</code> is the recorded
-                EXPERIMENTAL_tx_status response for the executed payout,
-                imported in place and passed through{" "}
-                <code>buildReviewerModel</code>. It was not copied, edited, or
-                presented as a current RPC read; re-derive it live with{" "}
-                <code>node scripts/reconcile-live.mjs</code>. Verified
-                transaction{" "}
-                <span className="exact-value">
-                  {fixtureJourneyConstants.transactionHash}
-                </span>
-                .
-              </p>
+              <details className="proof-details" data-recorded-proof="reviewer">
+                <summary>
+                  Recorded 0.5 NEAR payout — full receipt proof, hashes and
+                  reviewer intents
+                </summary>
+                <p>{journey.reviewer.approvedOnlyModel.payment.reason}</p>
+                <ReviewerPanel
+                  model={journey.reviewer.model}
+                  requestState={journey.reviewer.requestState}
+                  idScope="recorded-proposal-0"
+                  headingLevel={4}
+                />
+                <p className="fixture-source-note">
+                  <strong>Recorded-snapshot provenance:</strong>{" "}
+                  {journey.provenance.notice}{" "}
+                  <code>{journey.provenance.fixtureSource}</code> is the
+                  recorded EXPERIMENTAL_tx_status response, imported in place
+                  through <code>buildReviewerModel</code>. No clock, random
+                  value or GitHub request supplies these stages. Verified
+                  transaction{" "}
+                  <span className="exact-value">
+                    {fixtureJourneyConstants.transactionHash}
+                  </span>
+                  . This is not a current RPC read. Historical,
+                  provider-dependent recheck:{" "}
+                  <code>node scripts/reconcile-live.mjs --stdout-only</code>.
+                  Repeat without RPC:{" "}
+                  <code>node --test tests/e2e/e2e-replay.test.ts</code>.
+                </p>
+              </details>
             </div>
           </article>
         </section>
@@ -342,11 +374,10 @@ export default async function HomePage() {
               proof.
             </h2>
             <p>
-              The workspace reads the deployed registry over testnet RPC and
-              sends contributor transactions signed by the connected wallet.
-              There are still no keys in the app, no custody, and no simulated
-              success: the DAO keeps governance and payouts, and every submitted
-              transaction links to the explorer.
+              No keys in the app. No simulated success. The DAO keeps governance
+              and payout funds; the registry retains storage collateral. Public
+              security-fix PRs only after coordinated disclosure — no
+              confidential-report intake.
             </p>
           </div>
           <dl className="facts">
@@ -356,7 +387,7 @@ export default async function HomePage() {
             </div>
             <div>
               <dt>Live registry</dt>
-              <dd>{networkConfigs.TESTNET.registryAccountId} — deployed</dd>
+              <dd>{registryAccountId} — deployed</dd>
             </div>
             <div>
               <dt>Wallet signing</dt>
@@ -395,6 +426,7 @@ export default async function HomePage() {
               <a href="https://github.com/super-user-root/CommonsOps/blob/main/docs/testnet-journey.md">
                 Journey record
               </a>
+              <a href={`${basePath}/llms.txt`}>AI index · llms.txt</a>
             </div>
             <div>
               <p className="footer-heading">Project</p>

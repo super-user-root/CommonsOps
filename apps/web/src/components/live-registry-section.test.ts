@@ -39,9 +39,17 @@ test("live section keeps the required label, honest states, and scoped heading",
     /Querying \{registryAccountId\} at a NEAR testnet final block/,
   );
   assert.match(component, /No\s+fallback\s+data is shown/);
+  assert.match(component, /View recorded testnet evidence — not a live result/);
+  assert.match(
+    component,
+    /className="live-recovery-actions"[\s\S]*?href="#journey"/,
+  );
+  assert.match(component, /Cycle 2:0 is one global shared slot/);
+  assert.match(component, /immutable evidence\s+submission prevents release/);
+  assert.match(component, /node --test tests\/e2e\/e2e-replay.test.ts/);
   assert.match(component, /Re-read live state/);
   // Per-template read errors are named and do not invent data.
-  assert.match(component, /template discovery interrupted/);
+  assert.match(component, /[Tt]emplate discovery interrupted/);
   // No open cycle yet is rendered honestly for a template's next period.
   assert.match(
     component,
@@ -56,24 +64,38 @@ test("live section keeps the required label, honest states, and scoped heading",
   assert.match(component, /Foundation status:/);
 });
 
-test("every registered template gets a card group with actions bound to its own cycle", async () => {
+test("every template has a stable summary and only selected validated detail/actions are mounted", async () => {
   const component = await readFile(componentPath, "utf8");
   // The snapshot's template list drives per-template groups.
   assert.match(component, /snapshot\.templates\.map/);
   // Scoped, per-template IDs (unique per template id, not hardcoded once).
   for (const pattern of [
-    /id=\{`live-template-\$\{templateId\}-heading`\}/,
+    /id=\{`live-template-\$\{read.templateId\}-heading`\}/,
     /id=\{`live-latest-\$\{templateId\}-heading`\}/,
     /id=\{`live-next-\$\{templateId\}-heading`\}/,
     /id=\{`live-actions-\$\{templateId\}-heading`\}/,
   ]) {
     assert.match(component, pattern);
   }
-  // The actions bind to THIS group's newest live cycle: next period's cycle
-  // when materialized (judge-demo 2:0 OPEN), otherwise the latest existing.
+  // One selected group's validated cycle supplies the existing builders.
+  // The canonical preference/availability algorithm is executed in its own tests.
   assert.match(
     component,
-    /actionableCycle = paused\s*\?\s*null\s*:\s*\(read\.nextCycle\?\.cycle \?\? read\.latestCycle\?\.cycle \?\? null\)/,
+    /selectedRead\?\.kind === "READY" && selectedAvailability/,
+  );
+  assert.match(
+    component,
+    /actionableCycle = availability\.view\?\.cycle \?\? null/,
+  );
+  assert.match(
+    component,
+    /deriveTemplateAvailability\(\s*read,\s*snapshot\.block\.timestampNs,\s*wallet\.accountId/,
+  );
+  assert.match(component, /selection\.select\(id\);[\s\S]*?setChoice/);
+  assert.match(component, /selection\.capture\(templateId, gate.accountId\)/);
+  assert.match(
+    component,
+    /selectionToken\.valid\(\) && sendGate.current.fresh/,
   );
   // Paused templates render without contributor actions.
   assert.match(component, /\{paused \? null : \(/);
@@ -165,6 +187,18 @@ test("wallet code loads client-side only and holds no keys", async () => {
   assert.match(header, /"use client"/);
   assert.match(header, /Connect testnet wallet/);
   assert.match(header, /Disconnect/);
+});
+
+test("both wallet controls pass the actual trigger before lazy initialization", async () => {
+  const [header, component, provider] = await Promise.all([
+    readFile(headerPath, "utf8"),
+    readFile(componentPath, "utf8"),
+    readFile(providerPath, "utf8"),
+  ]);
+  for (const source of [header, component])
+    assert.match(source, /wallet\.connect\(event\.currentTarget\)/);
+  assert.match(provider, /const opener =\s*trigger \?\?/);
+  assert.match(provider, /chooser\.show\(opener\)/);
 });
 
 test("page mounts the provider once and the header uses the live control", async () => {

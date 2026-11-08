@@ -44,8 +44,8 @@ export function HeaderWalletButton() {
       id="wallet-connect-button"
       aria-haspopup="dialog"
       disabled={wallet.phase === "INITIALIZING"}
-      onClick={() => {
-        void wallet.connect();
+      onClick={(event) => {
+        void wallet.connect(event.currentTarget);
       }}
     >
       {wallet.phase === "INITIALIZING"
