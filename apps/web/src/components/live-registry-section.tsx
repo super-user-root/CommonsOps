@@ -10,7 +10,7 @@
 // returns none, capped); each template gets its own card group and its own
 // wallet-signed contributor actions bound to that template's live cycles.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Evidence } from "@commonsops/domain";
 import {
   contributorCycleIntent,
@@ -116,6 +116,14 @@ export function LiveRegistrySection({
   const [readState, setReadState] = useState<ReadState>({ status: "LOADING" });
 
   const config = useMemo(() => assertTestnet("testnet"), []);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+
+  // Carousel paging for the mobile template track: one group per swipe.
+  const scrollTrack = useCallback((direction: 1 | -1) => {
+    const track = trackRef.current;
+    if (!track) return;
+    track.scrollBy({ left: direction * track.clientWidth, behavior: "smooth" });
+  }, []);
 
   const refresh = useCallback(async () => {
     setReadState({ status: "LOADING" });
@@ -208,32 +216,63 @@ export function LiveRegistrySection({
         </button>
       </div>
 
-      {snapshot
-        ? snapshot.templates.map((read) =>
-            read.kind === "READY" ? (
-              <LiveTemplateGroup
-                key={read.templateId}
-                read={read}
-                registryAccountId={registryAccountId}
-                observedBlockTimestampNs={snapshot.block.timestampNs}
-                onSent={() => void refresh()}
-              />
-            ) : (
-              <article
-                className="live-card live-template-error"
-                key={read.templateId}
-                role="alert"
-              >
-                <h3>Template {read.templateId} — read failed</h3>
-                <p>
-                  {read.code}: {read.message} No fallback data is shown, and
-                  templates after this one were not read. Re-read the live state
-                  to try again.
-                </p>
-              </article>
-            ),
-          )
-        : null}
+      {snapshot ? (
+        <>
+          <div className="live-track-nav">
+            <span className="live-track-hint" aria-hidden="true">
+              One template per swipe
+            </span>
+            <button
+              className="button secondary"
+              type="button"
+              aria-label="Previous template group"
+              onClick={() => scrollTrack(-1)}
+            >
+              ‹
+            </button>
+            <button
+              className="button secondary"
+              type="button"
+              aria-label="Next template group"
+              onClick={() => scrollTrack(1)}
+            >
+              ›
+            </button>
+          </div>
+          <div
+            className="live-template-track"
+            role="region"
+            aria-label="Live registry templates, one group per swipe"
+            tabIndex={0}
+            ref={trackRef}
+          >
+            {snapshot.templates.map((read) =>
+              read.kind === "READY" ? (
+                <LiveTemplateGroup
+                  key={read.templateId}
+                  read={read}
+                  registryAccountId={registryAccountId}
+                  observedBlockTimestampNs={snapshot.block.timestampNs}
+                  onSent={() => void refresh()}
+                />
+              ) : (
+                <article
+                  className="live-card live-template-error"
+                  key={read.templateId}
+                  role="alert"
+                >
+                  <h3>Template {read.templateId} — read failed</h3>
+                  <p>
+                    {read.code}: {read.message} No fallback data is shown, and
+                    templates after this one were not read. Re-read the live
+                    state to try again.
+                  </p>
+                </article>
+              ),
+            )}
+          </div>
+        </>
+      ) : null}
 
       <div className="live-grid">
         <article className="live-card" aria-labelledby="live-operator-heading">

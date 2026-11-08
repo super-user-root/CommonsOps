@@ -166,7 +166,7 @@ footer {
   top: 0;
   z-index: 60;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 20px;
   padding: 11px 0;
@@ -456,10 +456,10 @@ h2 {
 
 h3 {
   margin: 10px 0;
-  font-size: clamp(1.2rem, 2vw, 1.45rem);
+  font-size: clamp(1.25rem, 2vw, 1.45rem);
   font-weight: 600;
   letter-spacing: -0.015em;
-  line-height: 1.28;
+  line-height: 1.3;
 }
 
 h4 {
@@ -516,9 +516,10 @@ p {
 
 .fixture-banner h2 {
   margin-top: 0;
-  font-size: 1.1rem;
+  font-size: clamp(1.75rem, 3vw, 2rem);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .fixture-banner p {
@@ -728,6 +729,7 @@ p {
 
 .stage-role {
   color: var(--blue);
+  font-size: 0.8125rem;
 }
 
 .panel-stack {
@@ -1043,7 +1045,7 @@ input {
 }
 
 .state-pattern h3 {
-  font-size: 1.08rem;
+  font-size: clamp(1.25rem, 2vw, 1.4rem);
 }
 
 .state-kicker {
@@ -1132,7 +1134,7 @@ footer {
 .footer-columns {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px 32px;
+  gap: 20px 32px;
 }
 
 .footer-heading {
@@ -1144,7 +1146,7 @@ footer {
 
 .footer-columns a {
   display: block;
-  padding: 5px 0;
+  padding: 3px 0;
   color: var(--ink-soft);
   text-decoration: none;
 }
@@ -1210,7 +1212,7 @@ footer {
 
 .live-card h3 {
   margin: 0 0 8px;
-  font-size: 1.05rem;
+  font-size: clamp(1.25rem, 2vw, 1.4rem);
 }
 
 .live-card > p {
@@ -1432,14 +1434,30 @@ main:focus,
 }
 
 @media (max-width: 1000px) {
+  /* Tablet: brand + GitHub + actions on row 1, section links on row 2. */
   .masthead {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand github actions"
+      "nav nav nav";
   }
 
-  .journey-nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
+  .masthead .wordmark {
+    grid-area: brand;
+  }
+
+  .masthead .journey-nav {
+    grid-area: nav;
     justify-content: flex-start;
+  }
+
+  .masthead .github-link {
+    grid-area: github;
+    justify-self: end;
+  }
+
+  .masthead .header-actions {
+    grid-area: actions;
   }
 
   .panel-stack {
@@ -1458,15 +1476,80 @@ main:focus,
 
   .masthead {
     position: static;
-    grid-template-columns: 1fr;
-    gap: 10px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand github actions"
+      "nav nav nav";
+    row-gap: 8px;
+    padding: 9px 0;
   }
 
-  .journey-nav,
-  .header-actions {
-    grid-column: auto;
-    grid-row: auto;
+  /* The decorative mark is dropped on mobile so brand, GitHub link and the
+   * wallet button share one row; the testnet badge lives in the footer legal
+   * strip at this width. */
+  .masthead .mark {
+    display: none;
+  }
+
+  .masthead .network-badge {
+    display: none;
+  }
+
+  .masthead .header-actions .button {
+    min-height: 38px;
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  .masthead .journey-nav a {
+    padding: 4px 2px;
+  }
+
+  .masthead .header-actions > :not(.network-badge):not(.github-link) {
+    grid-area: actions;
+    justify-self: end;
+  }
+  .masthead .wordmark {
+    grid-area: brand;
+  }
+
+  .masthead .journey-nav {
+    grid-area: nav;
     justify-content: flex-start;
+  }
+
+  .masthead .github-link {
+    grid-area: github;
+    justify-self: end;
+    align-self: center;
+  }
+
+  .masthead .header-actions {
+    display: contents;
+  }
+
+  .masthead .header-actions > :not(.network-badge):not(.github-link) {
+    grid-area: actions;
+    justify-self: end;
+  }
+
+  .masthead .network-badge {
+    grid-area: badge;
+    justify-self: end;
+  }
+
+  .masthead {
+    column-gap: 10px;
+  }
+
+  .masthead .header-actions .button {
+    min-height: 38px;
+    padding: 8px 14px;
+    white-space: nowrap;
+  }
+
+  .masthead .journey-nav a {
+    padding: 4px 2px;
   }
 
   .hero {
@@ -1514,10 +1597,6 @@ main:focus,
     order: 2;
   }
 
-  .header-actions .button {
-    width: 100%;
-  }
-
   .journey-nav {
     gap: 3px 14px;
     font-size: 0.8rem;
@@ -1557,11 +1636,69 @@ main:focus,
   }
 
   .live-facts {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .live-action > .button {
     align-self: stretch;
+  }
+}
+
+/* Mobile carousel for the live template groups. */
+.live-track-nav {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .live-track-nav {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .live-track-hint {
+    margin-right: auto;
+    color: var(--d-muted);
+    font-size: 0.9rem;
+  }
+
+  .live-track-nav .button {
+    min-height: 38px;
+    min-width: 44px;
+    padding: 6px 0;
+    font-size: 1.1rem;
+  }
+
+  .live-template-track {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 100%;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    margin-bottom: 16px;
+    border-radius: 20px;
+  }
+
+  .live-template-track > * {
+    scroll-snap-align: start;
+    min-width: 0;
+  }
+
+  .live-template-track:focus-visible {
+    outline: 3px solid var(--focus-dark);
+    outline-offset: 4px;
+  }
+
+  .live-template-group {
+    margin-bottom: 0;
+  }
+
+  .live-card {
+    padding: 20px;
   }
 }
 
@@ -1577,5 +1714,47 @@ main:focus,
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+/* Mobile type floors (kept last so they win same-specificity ties
+ * against every base rule above). */
+@media (max-width: 520px) {
+  /* The badge does not fit the two-row compact header at this width; the
+   * testnet notice remains in the footer legal strip and the network panel. */
+  .masthead .network-badge {
+    display: none;
+  }
+
+  .masthead .mark {
+    display: none;
+  }
+
+  p,
+  dd,
+  .live-facts dd,
+  .microcopy,
+  .fixture-banner p,
+  .intent-preview > p,
+  .intent-preview > span,
+  .request-status,
+  .live-card > p,
+  .live-action > p,
+  .live-meta p,
+  .live-request-state,
+  .live-status-line,
+  .fixture-source-note,
+  .state-message,
+  footer {
+    font-size: 1rem;
+  }
+
+  .intro,
+  .split-intro > p,
+  .stage-heading p,
+  .truth-panel p,
+  .live-card > p,
+  .network-panel p:not(.eyebrow) {
+    font-size: 1.0625rem;
   }
 }
