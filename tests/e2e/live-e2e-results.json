@@ -199,7 +199,7 @@
         "lockedYocto": "0"
       }
     },
-    "balanceNote": "The DAO balance is unchanged and the registry account balance decreased only by burned gas (~0.0029 NEAR across all runs): both storage deposits (0.04096 + 0.16384 NEAR) transfer to the contract account, which is commonsops.testnet itself, so they are internal and refundable by contract rules. No unexpected transfers."
+    "balanceNote": "The DAO balance is unchanged and the registry account balance decreased only by burned gas (~0.0029 NEAR across all runs). Both storage deposits (0.04096 + 0.16384 NEAR) were attached to self-calls on commonsops.testnet, so there was no transfer to a different account; the contract retains the storage collateral and implements no refund path. The balance observation does not imply refundable deposits. No unexpected transfers."
   },
   "limitations": [
     "The deployed contract (wasm sha256 9376a482c740711803ce30b708221823721fdaef8e24196ca5b78976f8f9410c, byte-identical to the reviewed repo build) surfaces every failing assert/expect path as 'WebAssembly trap: An `unreachable` opcode was executed.' instead of the ABI assert strings; Rust panics compiled with panic=abort become wasm `unreachable` traps unless the panic goes through the env::panic_str host path. Onchain rejection semantics are unaffected: failing action receipts revert all state, verified by the unchanged cycle/proposal-link state after every control.",
