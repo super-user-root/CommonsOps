@@ -116,6 +116,16 @@ test("curl examples are finite and decode nested get_cycle ABI; signing snippets
   assert.equal(calls, 3);
 });
 
+test("historical balance commentary does not invent a collateral refund path", async () => {
+  const record = JSON.parse(
+    await readFile(path.join(root, "tests/e2e/live-e2e-results.json"), "utf8"),
+  );
+  const note = record.finalState.balanceNote;
+  assert.match(note, /contract retains the storage collateral/);
+  assert.match(note, /implements no refund path/);
+  assert.doesNotMatch(note, /refundable by contract rules/);
+});
+
 test("public routes retain shared-slot, scope, artifact and publication caveats without current screenshot claims", async () => {
   const readme = await readFile(path.join(root, "README.md"), "utf8");
   const demo = await readFile(path.join(root, "demo/README.md"), "utf8");
